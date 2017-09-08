@@ -440,7 +440,7 @@ abc_list_flag()
 
 abc_find()
 {
-	local mark commit parents upstream files
+	local mark commit parents upstream files i
 	local new_downstream_only=() possible_cherries=()
 
 	abc_get_limits "$@"
@@ -488,11 +488,16 @@ abc_find()
 			possible_cherries+=($upstream)
 		done
 		for commit in ${new_downstream_only[*]}; do
+			i=0
 			for upstream in ${possible_cherries[*]}; do
 				if abc_is_cherry $commit $upstream; then
 					abc_set_flag $commit "ABC_CHERRYPICK=$upstream"
 					abc_set_flag $upstream "ABC_DOWNSTREAM=$commit"
+					unset possible_cherries[i]
+					possible_cherries=(${possible_cherries[*]})
+					break
 				fi
+				((++i))
 			done
 		done
 	fi
