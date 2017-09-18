@@ -36,9 +36,10 @@ ABC_DEFAULT_TODO_PATH="git-abc-todo"
 : "${ABC_COLOR:='false'}"
 
 die() { echo "$1" >&2; exit 1; }
+die_error() { echo "Error: $1" >&2; exit 1; }
 
 if grep -q '/' <<<"$ABC_NAMESPACE"; then
-	die "Error: the namespace may not contain '/'."
+	die_error "The namespace may not contain '/'"
 fi
 export GIT_NOTES_REF="refs/notes/$ABC_NAMESPACE"
 
@@ -206,7 +207,7 @@ abc_import()
 
 	if [ "$1" ]; then
 		if [ ! -f "$1" ]; then
-			die "Error: file '$1' not found"
+			die_error "File '$1' not found"
 		fi
 		exec {fd}<"$1"
 	else
@@ -259,7 +260,7 @@ abc_reset()
 		if [ "$1" = '-f' ] || [ "$1" = '--force' ]; then
 			ans=yes
 		else
-			die "Error: unknown option '$1' passed to reset, not resetting"
+			die_error "Unknown option '$1' passed to reset, not resetting"
 		fi
 	else
 		echo "Are you sure you want to erase all backport selection history?"
@@ -298,14 +299,14 @@ abc_get_limits()
 	if [ "$ABC_UPSTREAM" = "" ]; then
 		ABC_UPSTREAM=$(git config --get abc.upstream)
 		if [ "$ABC_UPSTREAM" ] && ! git rev-parse --verify -q "$ABC_UPSTREAM" >/dev/null; then
-			die "Error: abc.upstream='$ABC_UPSTREAM' is not a valid upstream revision"
+			die_error "abc.upstream='$ABC_UPSTREAM' is not a valid upstream revision"
 		fi
 	fi
 
 	if [ "$ABC_DOWNSTREAM" = "" ]; then
 		ABC_DOWNSTREAM=$(git config --get abc.downstream)
 		if [ "$ABC_DOWNSTREAM" ] && ! git rev-parse --verify -q "$ABC_DOWNSTREAM" >/dev/null; then
-			die "Error: abc.downstream='$ABC_DOWNSTREAM' is not a valid downstream revision"
+			die_error "abc.downstream='$ABC_DOWNSTREAM' is not a valid downstream revision"
 		elif [ "$ABC_DOWNSTREAM" = "" ]; then
 			ABC_DOWNSTREAM=HEAD
 		fi
@@ -354,7 +355,7 @@ abc_list()
 	--backported-cherry-picks)	range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_CHERRYPICK;;
 	--downstream-only)		range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_ONLY_DOWNSTREAM;;
 	*)
-		die "Error: unknown option '$list' passed to list"
+		die_error "Unknown option '$list' passed to list"
 		;;
 	esac
 
@@ -373,13 +374,13 @@ abc_set_upstream()
 	local downstream=$1 upstream=$2
 
 	if [ "$downstream" = "" ] || [ "$upstream" = "" ]; then
-		die "Error: set-upstream requires two parameters: <downstream-commit> <upstream-commit>"
+		die_error "set-upstream requires two parameters: <downstream-commit> <upstream-commit>"
 	fi
 	if ! git rev-parse --verify -q "$downstream^{commit}" >/dev/null; then
-		die "Error: '$downstream' is not a valid commit"
+		die_error "'$downstream' is not a valid commit"
 	fi
 	if ! git rev-parse --verify -q "$upstream^{commit}" >/dev/null; then
-		die "Error: '$upstream' is not a valid commit"
+		die_error "'$upstream' is not a valid commit"
 	fi
 	downstream=$(git log -n1 --pretty=%H $downstream)
 	upstream=$(git log -n1 --pretty=%H $upstream)
@@ -418,10 +419,10 @@ abc_get_upstream()
 	local commit=$1
 
 	if [ "$commit" = "" ]; then
-		die "Error: get-upstream requires a parameter: <downstream-commit>"
+		die_error "get-upstream requires a parameter: <downstream-commit>"
 	fi
 	if ! git rev-parse --verify -q "$commit^{commit}" >/dev/null; then
-		die "Error: '$commit' is not a valid commit"
+		die_error "'$commit' is not a valid commit"
 	fi
 	git log -n1 --pretty='%h %s' "$(abc_get_upstream_nocheck $commit)"
 }
@@ -537,7 +538,7 @@ abc_flag()
 	--candidate)	flag=ABC_BACKPORT_CANDIDATE;;
 	--rejected)	flag=ABC_DONT_WANT;;
 	*)
-		die "Error: unknown option '$flag' passed to flag"
+		die_error "Unknown option '$flag' passed to flag"
 		;;
 	esac
 	if [ "$1" = '--' ]; then
@@ -586,7 +587,7 @@ abc_select()
 		--show-all)	show_dropped=y show_picked=y;;
 		--) ;;
 		*)
-			die "Error: unknown option '$1' passed to select"
+			die_error "Unknown option '$1' passed to select"
 			;;
 		esac
 		shift
