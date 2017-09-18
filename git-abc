@@ -276,7 +276,7 @@ abc_reset()
 
 abc_get_limits()
 {
-	local current_branch
+	local downstream_branch
 
 	if [ "$1" ] && [ "$1" != '--' ]; then
 		if git rev-parse --verify -q "$1" >/dev/null; then
@@ -312,10 +312,10 @@ abc_get_limits()
 	fi
 
 	if [ "$ABC_UPSTREAM" = "" ]; then
-		current_branch=$(git branch --contains "$ABC_DOWNSTREAM" | sed 's/^\* //')
-		ABC_UPSTREAM="$current_branch@{upstream}"
+		downstream_branch=$(git branch --contains "$ABC_DOWNSTREAM" | sed 's/^\* //')
+		ABC_UPSTREAM="$downstream_branch@{upstream}"
 		if ! git rev-parse "$ABC_UPSTREAM" >&/dev/null; then
-			die "No upstream associated with '$ABC_DOWNSTREAM's branch '$current_branch'."
+			die "No upstream associated with '$ABC_DOWNSTREAM's branch '$downstream_branch'."
 		fi
 	fi
 }
