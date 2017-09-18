@@ -326,7 +326,7 @@ abc_should_highlight()
 
 abc_list()
 {
-	local head flag commit subject merge_base
+	local range flag commit subject
 	local list='--candidates'
 
 	if [[ $1 =~ ^- ]] && [ "$1" != '--' ]; then
@@ -336,22 +336,19 @@ abc_list()
 	abc_get_limits "$@"
 
 	case "$list" in
-	--candidates)			head=$ABC_UPSTREAM flag=ABC_BACKPORT_CANDIDATE;;
-	--pending)			head=$ABC_UPSTREAM flag=ABC_BACKPORT_PENDING;;
-	--rejected)			head=$ABC_UPSTREAM flag=ABC_DONT_WANT;;
-	--backported)			head=$ABC_DOWNSTREAM flag='ABC_UPSTREAM\|ABC_CHERRYPICK';;
-	--backported-non-trivial)	head=$ABC_DOWNSTREAM flag=ABC_UPSTREAM;;
-	--backported-cherry-picks)	head=$ABC_DOWNSTREAM flag=ABC_CHERRYPICK;;
-	--downstream-only)		head=$ABC_DOWNSTREAM flag=ABC_ONLY_DOWNSTREAM;;
+	--candidates)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_BACKPORT_CANDIDATE;;
+	--pending)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_BACKPORT_PENDING;;
+	--rejected)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_DONT_WANT;;
+	--backported)			range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag='ABC_UPSTREAM\|ABC_CHERRYPICK';;
+	--backported-non-trivial)	range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_UPSTREAM;;
+	--backported-cherry-picks)	range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_CHERRYPICK;;
+	--downstream-only)		range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_ONLY_DOWNSTREAM;;
 	*)
 		die "Error: unknown option '$list' passed to list"
 		;;
 	esac
 
-	merge_base=$(git merge-base "$ABC_UPSTREAM" "$ABC_DOWNSTREAM")
-
-	git log --notes --pretty='%h %s' --grep=^$flag \
-			"$merge_base".."$head" |
+	git log --notes --pretty='%h %s' --grep=^$flag "$range" |
 	while read -r commit subject; do
 		if abc_should_highlight $commit; then
 			echo "$(abc_highlight $commit) $subject"
