@@ -644,10 +644,10 @@ EOF
 	for (( i = 0; i < ${#cmds[*]}; ++i )); do
 		read -r cmd commit <<<"${cmds[i]}"
 		case "$cmd" in
-		p|P|pick|PICK) abc_flag --pending $commit;;
-		d|D|drop|DROP) abc_flag --rejected $commit;;
-		c|C|cand|CAND) abc_flag --candidate $commit;;
-		v|V|view|VIEW)
+		P|p|Pick|pick|PICK) abc_flag --pending $commit;;
+		D|d|Drop|drop|DROP) abc_flag --rejected $commit;;
+		C|c|Cand|cand|CAND) abc_flag --candidate $commit;;
+		V|v|View|view|VIEW)
 			git show $commit
 			read -r -p "Backport (Pick/Drop/Cand/Skip)? " cmd
 			while true; do
