@@ -22,6 +22,7 @@ ABC_DEFAULT_TODO_PATH="git-abc-todo"
 # Set parameters per the user's environment or config
 : "${ABC_SHOULD_HIGHLIGHT:=$(git config --get abc.should-highlight)}"
 : "${ABC_UPSTREAM_LINK:=$(git config --get abc.upstream-link)}"
+: "${ABC_HUNT_CHERRIES:=$(git config --get abc.hunt-cherries)}"
 : "${ABC_NAMESPACE:=$(git config --get abc.namespace)}"
 : "${ABC_TODO_PATH:=$(git config --get abc.todo-path)}"
 [ -t 1 ] && ABC_COLOR=$(git config --get-colorbool color.ui 'true')
@@ -29,6 +30,7 @@ ABC_DEFAULT_TODO_PATH="git-abc-todo"
 # Set defaults for anything still not set
 : "${ABC_SHOULD_HIGHLIGHT:=$ABC_DEFAULT_SHOULD_HIGHLIGHT}"
 : "${ABC_UPSTREAM_LINK:=$ABC_DEFAULT_UPSTREAM_LINK}"
+: "${ABC_HUNT_CHERRIES:='false'}"
 : "${ABC_NAMESPACE:=$ABC_DEFAULT_NAMESPACE}"
 : "${ABC_TODO_PATH:=$GIT_DIR/$ABC_DEFAULT_TODO_PATH}"
 : "${ABC_COLOR:='false'}"
@@ -171,6 +173,14 @@ CONFIGURATION
     "$ABC_DEFAULT_UPSTREAM_LINK"
 
     The ABC_UPSTREAM_LINK environment variable may be used to override this config.
+
+  abc.hunt-cherries
+    Try harder to find cherry-picks, including ones that are missing or have malformed
+    upstream links, or that have upstream links pointing to commits in a different tree
+    than has been specified as <upstream>. This is expensive to do, so it's off ('false')
+    by default. To enable, set to 'true'.
+
+    The ABC_HUNT_CHERRIES environment variable may be used to override this config.
 
   abc.todo-path
     The path of the file to create and use while editing the backport candidate list with
@@ -456,7 +466,11 @@ abc_find()
 				continue
 			fi
 			if [ "$upstream" = "" ]; then
-				abc_set_flag $commit ABC_ONLY_DOWNSTREAM_NEW
+				if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
+					abc_set_flag $commit ABC_ONLY_DOWNSTREAM_NEW
+				else
+					abc_set_flag $commit ABC_ONLY_DOWNSTREAM
+				fi
 				continue
 			fi
 			if abc_is_cherry $commit $upstream; then
@@ -484,6 +498,10 @@ abc_find()
 	# Any new downstream-only commits, that have matching upstream commits, were
 	# likely cherry picked from a different upstream tree, which was then later
 	# merged to the specified upstream. We can fix up these commits automatically.
+	# It's expensive to do, though, so require abc.hunt-cherries to be set true.
+	if [ "$ABC_HUNT_CHERRIES" != "true" ]; then
+		return
+	fi
 	for commit in $(abc_list_flag ABC_ONLY_DOWNSTREAM_NEW); do
 		abc_set_flag $commit ABC_ONLY_DOWNSTREAM
 		new_downstream_only+=($commit)
