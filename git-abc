@@ -385,7 +385,7 @@ abc_get_upstream_nocheck()
 	upstream=$(git notes show $commit 2>/dev/null | grep -e ABC_UPSTREAM -e ABC_CHERRYPICK)
 	if [ "$upstream" ]; then
 		echo ${upstream#*=}
-		return
+		return 1
 	fi
 
 	tr ',%' '\n%' <<<"$ABC_UPSTREAM_LINK" |
@@ -393,7 +393,11 @@ abc_get_upstream_nocheck()
 		upstream=$(git log -n1 --pretty="$phs" $commit |
 				sed -E "s/$re/ABC_UPSTREAM=\1/;/^ABC_UPSTREAM=/!d;s/ABC_UPSTREAM=//")
 		if [ "$upstream" ] && git rev-parse --verify -q "$upstream^{commit}" >/dev/null; then
-			git log -n1 --pretty=%H $upstream
+			if [ ${#upstream} -ne 40 ]; then
+				git log -n1 --pretty=%H $upstream
+			else
+				echo $upstream
+			fi
 			return
 		fi
 	done
@@ -447,6 +451,10 @@ abc_find()
 	while read -r mark commit parents; do
 		if [ "$mark" = '>' ]; then
 			upstream=$(abc_get_upstream_nocheck $commit)
+			if [ $? -eq 1 ]; then
+				# Move along... we've seen this commit before.
+				continue
+			fi
 			if [ "$upstream" = "" ]; then
 				abc_set_flag $commit ABC_ONLY_DOWNSTREAM_NEW
 				continue
