@@ -369,9 +369,19 @@ abc_list()
 	done
 }
 
+abc_is_cherry()
+{
+	local commit_a=$1 commit_b=$2
+	local id_a id_b
+
+	id_a=$(git show $commit_a | git patch-id --stable | awk '{print$1}')
+	id_b=$(git show $commit_b | git patch-id --stable | awk '{print$1}')
+	test "$id_a" = "$id_b"
+}
+
 abc_set_upstream()
 {
-	local downstream=$1 upstream=$2
+	local downstream=$1 upstream=$2 current_upstream
 
 	if [ "$downstream" = "" ] || [ "$upstream" = "" ]; then
 		die_error "set-upstream requires two parameters: <downstream-commit> <upstream-commit>"
@@ -384,7 +394,17 @@ abc_set_upstream()
 	fi
 	downstream=$(git log -n1 --pretty=%H $downstream)
 	upstream=$(git log -n1 --pretty=%H $upstream)
-	abc_set_flag $downstream "ABC_UPSTREAM=$upstream"
+
+	current_upstream=$(git notes show $downstream 2>/dev/null | grep -e ABC_UPSTREAM -e ABC_CHERRYPICK)
+	if [ "$current_upstream" ]; then
+		git notes remove ${current_upstream#*=} 2>/dev/null
+	fi
+
+	if abc_is_cherry $downstream $upstream; then
+		abc_set_flag $downstream "ABC_CHERRYPICK=$upstream"
+	else
+		abc_set_flag $downstream "ABC_UPSTREAM=$upstream"
+	fi
 	abc_set_flag $upstream "ABC_DOWNSTREAM=$downstream"
 }
 
@@ -425,16 +445,6 @@ abc_get_upstream()
 		die_error "'$commit' is not a valid commit"
 	fi
 	git log -n1 --pretty='%h %s' "$(abc_get_upstream_nocheck $commit)"
-}
-
-abc_is_cherry()
-{
-	local commit_a=$1 commit_b=$2
-	local id_a id_b
-
-	id_a=$(git show $commit_a | git patch-id --stable | awk '{print$1}')
-	id_b=$(git show $commit_b | git patch-id --stable | awk '{print$1}')
-	test "$id_a" = "$id_b"
 }
 
 abc_list_flag()
