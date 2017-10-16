@@ -369,13 +369,19 @@ abc_list()
 	done
 }
 
+abc_get_patch_id()
+{
+	local commit=$1
+	git show $commit | git patch-id --stable | awk '{print$1}'
+}
+
 abc_is_cherry()
 {
 	local commit_a=$1 commit_b=$2
 	local id_a id_b
 
-	id_a=$(git show $commit_a | git patch-id --stable | awk '{print$1}')
-	id_b=$(git show $commit_b | git patch-id --stable | awk '{print$1}')
+	id_a=$(abc_get_patch_id $commit_a)
+	id_b=$(abc_get_patch_id $commit_b)
 	test "$id_a" = "$id_b"
 }
 
@@ -462,8 +468,9 @@ abc_list_flag()
 
 abc_find()
 {
-	local mark commit parents upstream files i
+	local mark commit parents upstream files did uid
 	local new_downstream_only=() possible_cherries=()
+	declare -A downstream_patchid upstream_patchid
 
 	abc_get_limits "$@"
 
@@ -516,22 +523,23 @@ abc_find()
 	for commit in $(abc_list_flag ABC_ONLY_DOWNSTREAM_NEW); do
 		abc_set_flag $commit ABC_ONLY_DOWNSTREAM
 		new_downstream_only+=($commit)
+		downstream_patchid[$commit]=$(abc_get_patch_id $commit)
 	done
 	if (( ${#new_downstream_only[*]} > 0 )); then
-		for upstream in $(abc_list_flag 'ABC_BACKPORT_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT'); do
-			possible_cherries+=($upstream)
-		done
+		possible_cherries=($(abc_list_flag 'ABC_BACKPORT_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT'))
 		for commit in ${new_downstream_only[*]}; do
-			i=0
+			did=${downstream_patchid[$commit]}
 			for upstream in ${possible_cherries[*]}; do
-				if abc_is_cherry $commit $upstream; then
+				uid=${upstream_patchid[$upstream]}
+				if [ "$uid" = "" ]; then
+					upstream_patchid[$upstream]=$(abc_get_patch_id $upstream)
+					uid=${upstream_patchid[$upstream]}
+				fi
+				if [ "$did" = "$uid" ]; then
 					abc_set_flag $commit "ABC_CHERRYPICK=$upstream"
 					abc_set_flag $upstream "ABC_DOWNSTREAM=$commit"
-					unset possible_cherries[i]
-					possible_cherries=(${possible_cherries[*]})
 					break
 				fi
-				((++i))
 			done
 		done
 	fi
