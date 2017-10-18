@@ -176,10 +176,10 @@ CONFIGURATION
     The ABC_UPSTREAM_LINK environment variable may be used to override this config.
 
   abc.hunt-cherries
-    Try harder to find cherry-picks, including ones that are missing or have malformed
-    upstream links, or that have upstream links pointing to commits in a different tree
-    than has been specified as <upstream>. This is expensive to do, so it's off ('false')
-    by default. To enable, set to 'true'.
+    Try harder to find cherry-picks, including ones that have missing or malformed upstream
+    links, or that have upstream links pointing to commits in a different tree than has been
+    specified as <upstream>. This is expensive to do, so it's off ('false') by default.
+    To enable, set to 'true'.
 
     The ABC_HUNT_CHERRIES environment variable may be used to override this config.
 
