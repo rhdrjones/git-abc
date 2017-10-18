@@ -30,10 +30,10 @@ ABC_DEFAULT_TODO_PATH="git-abc-todo"
 # Set defaults for anything still not set
 : "${ABC_SHOULD_HIGHLIGHT:=$ABC_DEFAULT_SHOULD_HIGHLIGHT}"
 : "${ABC_UPSTREAM_LINK:=$ABC_DEFAULT_UPSTREAM_LINK}"
-: "${ABC_HUNT_CHERRIES:='false'}"
+: "${ABC_HUNT_CHERRIES:=false}"
 : "${ABC_NAMESPACE:=$ABC_DEFAULT_NAMESPACE}"
 : "${ABC_TODO_PATH:=$GIT_DIR/$ABC_DEFAULT_TODO_PATH}"
-: "${ABC_COLOR:='false'}"
+: "${ABC_COLOR:=false}"
 
 die() { echo "$1" >&2; exit 1; }
 die_error() { echo "Error: $1" >&2; exit 1; }
