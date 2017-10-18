@@ -110,7 +110,7 @@ Workflow
 6.  Quickly accept/reject anything easy to accept/reject using
     'git-abc accept' and 'git-abc reject'.  The example below accepts any
     commits with the subject prefix 'YES' and rejects any commits with
-    the subject prefix, 'NO'::
+    the subject prefix 'NO'::
 
       $ git abc accept $(git abc list | awk '/YES:/ {print$1}')
       $ git abc reject $(git abc list | awk '/NO:/ {print$1}')
@@ -186,6 +186,7 @@ command line clutter::
     ABC_NAMESPACE="abc-<path-set-name>"                             \
     ABC_SHOULD_HIGHLIGHT="<path-set-should-highlight>"              \
     ABC_UPSTREAM_LINK="<path-set-upstream-link>"                    \
+    ABC_HUNT_CHERRIES="<true|false>"                                \
     ABC_TODO_PATH="<path-set-todo-path>"                            \
     ABC_UPSTREAM="<path-set-upstream>"                              \
     ABC_DOWNSTREAM="<path-set-downstream>"                          \
