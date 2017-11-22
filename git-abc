@@ -88,6 +88,11 @@ $USAGE
     <downstream> should bind the same range, or subrange, of the ones used with 'find' and that
     the search limiting '<path>'s used with 'find' also limit what is listed.
 
+  pick-list [<upstream> [<downstream>]]
+
+    List the pending backports, like 'list --pending', but output the list in a git-cherry-pick(1)
+    friendly way, i.e. only the commit hashes and in reverse order.
+
   select [--show-dropped|--show-picked|--show-all]
 
     Run an interactive session to make selection decisions about the candidates previously found
@@ -697,6 +702,7 @@ shift
 case "$cmd" in
 find)		abc_find "$@";;
 list)		abc_list "$@";;
+pick-list)	abc_list --pending "$@" | awk '{print$1}' | tac;;
 select)		abc_select "$@";;
 flag)		abc_flag "$@";;
 reject)		abc_flag --rejected "$@";;
