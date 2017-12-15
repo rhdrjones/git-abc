@@ -72,17 +72,18 @@ $USAGE
 
   list [<option>] [<upstream> [<downstream>]]
     where <option> is one of the following
-      --candidates|--pending|--rejected|
+      --candidates|--deferred|--pending|--rejected|
       --downstream-only|
       --backported|--backported-non-trivial|--backported-cherry-picks
 
-    List backport candidates (--candidates), pending backports (--pending), commits rejected
-    for backport (--rejected), commits that are downstream only (--downstream-only), all commits
-    already backported (--backported), just commits already backported that were non-trivial
-    (--backported-non-trivial), or just commits already backported that were cherry picks
-    (--backported-cherry-picks). When no option is given, defaults to listing backport candidates.
-    <upstream> and <downstream> have the same defaults as 'find'. When the color.ui configuration
-    setting is true, interesting commits, e.g. possible fixes, are $(abc_highlight highlighted).
+    List backport candidates (--candidates), deferred backport candidates (--deferred), pending
+    backports (--pending), commits rejected for backport (--rejected), commits that are downstream
+    only (--downstream-only), all commits already backported (--backported), just commits already
+    backported that were non-trivial (--backported-non-trivial), or just commits already backported
+    that were cherry picks (--backported-cherry-picks). When no option is given, defaults to listing
+    backport candidates. <upstream> and <downstream> have the same defaults as 'find'. When the
+    color.ui configuration setting is true, interesting commits, e.g. possible fixes, are
+    $(abc_highlight highlighted).
 
     Note, 'list' only lists commits previously found with 'find', which means <upstream> and
     <downstream> should bind the same range, or subrange, of the ones used with 'find' and that
@@ -93,21 +94,21 @@ $USAGE
     List the pending backports, like 'list --pending', but output the list in a git-cherry-pick(1)
     friendly way, i.e. only the commit hashes and in reverse order.
 
-  select [--show-dropped|--show-picked|--show-all]
+  select [--show-deferred|--show-dropped|--show-picked|--show-all]
 
     Run an interactive session to make selection decisions about the candidates previously found
     with 'find'. Only backport candidates are shown when 'select' is used without options. The
-    options --show-dropped and --show-picked may be used to also show respectively commits
-    rejected for backport and pending backports. The option --show-all specifies both. Each
-    commit's ABC flag is used to determine its suggested action: 'view' for a backport candidate,
-    'drop' for a commit rejected for backport, and 'pick' for a pending backport. The suggested
-    action is 'VIEW' (capitalized 'view') when the commit looks like an interesting commit, e.g.
-    a possible fix.
+    options --show-deferred, --show-dropped, and --show-picked may be used to also show respectively
+    deferred candidates, rejected candidates, and pending backports. The option --show-all specifies
+    all of them. Each commit's ABC flag is used to determine its suggested action: 'view' for a
+    backport candidate (or deferred candidate), 'drop' for a commit rejected for backport, and
+    'pick' for a pending backport. The suggested action is 'VIEW' (capitalized 'view') when the
+    commit looks like an interesting commit, e.g.  a possible fix.
 
-  flag <--pending|--candidate|--rejected> <commit>...
+  flag <--pending|--candidate|--deferred|--rejected> <commit>...
 
-    Flag <commit>('s) as pending backport(s), backport candidate(s), or commit(s) rejected for
-    backport.
+    Flag <commit>('s) as pending backport(s), backport candidate(s), deferred backport candidate(s),
+    or commit(s) rejected for backport.
 
   reject <commit>...
 
@@ -116,6 +117,14 @@ $USAGE
   accept <commit>...
 
     This is an alias for 'flag --pending'
+
+  defer <commit>...
+
+    This is an alias for 'flag --deferred'
+
+    Deferred backport candidates are normal candidates, except they don't appear in the candidates'
+    listings. Deferring candidates allows one to reduce the candidate list to a more manageable
+    length without needing to make all decisions at once.
 
   set-upstream <downstream-commit> <upstream-commit>
 
@@ -223,6 +232,7 @@ abc_import()
 		case "$flag" in
 		BP) abc_set_flag $commit ABC_BACKPORT_PENDING;;
 		BC) abc_set_flag $commit ABC_BACKPORT_CANDIDATE;;
+		DC) abc_set_flag $commit ABC_DEFERRED_CANDIDATE;;
 		DW) abc_set_flag $commit ABC_DONT_WANT;;
 		DO) abc_set_flag $commit ABC_ONLY_DOWNSTREAM;;
 		US) abc_set_flag $commit "ABC_DOWNSTREAM=$link";;
@@ -243,6 +253,8 @@ abc_export()
 			echo "BP $commit"
 		elif grep -q ABC_BACKPORT_CANDIDATE <<<$flag; then
 			echo "BC $commit"
+		elif grep -q ABC_DEFERRED_CANDIDATE <<<$flag; then
+			echo "DC $commit"
 		elif grep -q ABC_DONT_WANT <<<$flag; then
 			echo "DW $commit"
 		elif grep -q ABC_ONLY_DOWNSTREAM <<<$flag; then
@@ -353,6 +365,7 @@ abc_list()
 
 	case "$list" in
 	--candidates)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_BACKPORT_CANDIDATE;;
+	--deferred)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_DEFERRED_CANDIDATE;;
 	--pending)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_BACKPORT_PENDING;;
 	--rejected)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_DONT_WANT;;
 	--backported)			range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag='ABC_UPSTREAM\|ABC_CHERRYPICK';;
@@ -531,7 +544,7 @@ abc_find()
 		downstream_patchid[$commit]=$(abc_get_patch_id $commit)
 	done
 	if (( ${#new_downstream_only[*]} > 0 )); then
-		possible_cherries=($(abc_list_flag 'ABC_BACKPORT_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT'))
+		possible_cherries=($(abc_list_flag 'ABC_BACKPORT_CANDIDATE|ABC_DEFERRED_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT'))
 		for commit in ${new_downstream_only[*]}; do
 			did=${downstream_patchid[$commit]}
 			for upstream in ${possible_cherries[*]}; do
@@ -559,6 +572,7 @@ abc_flag()
 	case "$flag" in
 	--pending)	flag=ABC_BACKPORT_PENDING;;
 	--candidate)	flag=ABC_BACKPORT_CANDIDATE;;
+	--deferred)	flag=ABC_DEFERRED_CANDIDATE;;
 	--rejected)	flag=ABC_DONT_WANT;;
 	*)
 		die_error "Unknown option '$flag' passed to flag"
@@ -600,14 +614,15 @@ git_editor()
 abc_select()
 {
 	local dir commit abbrev subject flag cmd i
-	local show_dropped show_picked
+	local show_deferred show_dropped show_picked
 	local cmds=()
 
 	while [ "$1" ]; do
 		case "$1" in
-		--show-dropped)	show_dropped=y;;
-		--show-picked)	show_picked=y;;
-		--show-all)	show_dropped=y show_picked=y;;
+		--show-deferred)	show_deferred=y;;
+		--show-dropped)		show_dropped=y;;
+		--show-picked)		show_picked=y;;
+		--show-all)		show_deferred=y show_dropped=y show_picked=y;;
 		--) ;;
 		*)
 			die_error "Unknown option '$1' passed to select"
@@ -627,16 +642,17 @@ abc_select()
 	while read -r commit; do
 		flag=$(git notes show $commit)
 		read -r abbrev subject <<<"$(git log -n1 --pretty='%h %s' $commit)"
-		if grep -q ABC_BACKPORT_CANDIDATE <<<$flag; then
+		if grep -q ABC_BACKPORT_CANDIDATE <<<$flag ||
+		   ( [ "$show_deferred" ] && grep -q ABC_DEFERRED_CANDIDATE <<<$flag ); then
 			if abc_should_highlight $commit; then
 				echo "VIEW $abbrev $subject" >> "$ABC_TODO_PATH"
 			else
 				echo "view $abbrev $subject" >> "$ABC_TODO_PATH"
 			fi
-		elif [ "$show_picked" ] && grep -q ABC_BACKPORT_PENDING <<<$flag; then
-			echo "pick $abbrev $subject" >> "$ABC_TODO_PATH"
 		elif [ "$show_dropped" ] && grep -q ABC_DONT_WANT <<<$flag; then
 			echo "drop $abbrev $subject" >> "$ABC_TODO_PATH"
+		elif [ "$show_picked" ] && grep -q ABC_BACKPORT_PENDING <<<$flag; then
+			echo "pick $abbrev $subject" >> "$ABC_TODO_PATH"
 		fi
 	done
 
@@ -652,6 +668,7 @@ abc_select()
 # p, pick = commit is accepted for backport
 # d, drop = commit is rejected for backport
 # c, cand = commit is reset as a candidate
+# h, hide = commit is deferred
 # s, skip = commit is left as is (i.e. its current flag is not changed)
 # v, view = commit is left as is, but it's also selected for viewing
 #
@@ -671,9 +688,10 @@ EOF
 		P|p|Pick|pick|PICK) abc_flag --pending $commit;;
 		D|d|Drop|drop|DROP) abc_flag --rejected $commit;;
 		C|c|Cand|cand|CAND) abc_flag --candidate $commit;;
+		H|h|Hide|hide|HIDE) abc_flag --deferred $commit;;
 		V|v|View|view|VIEW)
 			git show $commit
-			read -r -p "Backport (Pick/Drop/Cand/Skip)? " cmd
+			read -r -p "Backport (Pick/Drop/Cand/Hide/Skip)? " cmd
 			while true; do
 				case "$cmd" in
 				P|p|Pick|pick)
@@ -685,10 +703,13 @@ EOF
 				C|c|Cand|cand)
 					abc_flag --candidate $commit
 					break;;
+				H|h|Hide|hide)
+					abc_flag --deferred $commit
+					break;;
 				S|s|Skip|skip)
 					break;;
 				*)
-					read -r -p "Backport (Pick/Drop/Cand/Skip)? " cmd
+					read -r -p "Backport (Pick/Drop/Cand/Hide/Skip)? " cmd
 					;;
 				esac
 			done
@@ -707,6 +728,7 @@ select)		abc_select "$@";;
 flag)		abc_flag "$@";;
 reject)		abc_flag --rejected "$@";;
 accept)		abc_flag --pending "$@";;
+defer)		abc_flag --deferred "$@";;
 set-upstream)	abc_set_upstream "$@";;
 get-upstream)	abc_get_upstream "$1";;
 reset)		abc_reset "$1";;
