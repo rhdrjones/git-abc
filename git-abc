@@ -166,6 +166,12 @@ $USAGE
 
 CONFIGURATION
 
+  abc.upstream
+    The upstream revision pointer, see gitrevisions(7).
+
+  abc.downstream
+    The downstream revision pointer, see gitrevisions(7).
+
   abc.namespace
     The name of the namespace to use. The name may not contain '/'. (Internally this name
     will be prefixed with refs/notes/ and used as a git-notes(1) ref.) The default is
