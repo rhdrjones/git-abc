@@ -94,7 +94,9 @@ $USAGE
     List the pending backports, like 'list --pending', but output the list in a git-cherry-pick(1)
     friendly way, i.e. only the commit hashes and in reverse order.
 
-  select [--show-deferred|--show-dropped|--show-picked|--show-all]
+  select [<option>] [<upstream> [<downstream>]]
+    where <option> is one of the following
+      --show-deferred|--show-dropped|--show-picked|--show-all
 
     Run an interactive session to make selection decisions about the candidates previously found
     with 'find'. Only backport candidates are shown when 'select' is used without options. The
@@ -104,6 +106,9 @@ $USAGE
     backport candidate (or deferred candidate), 'drop' for a commit rejected for backport, and
     'pick' for a pending backport. The suggested action is 'VIEW' (capitalized 'view') when the
     commit looks like an interesting commit, e.g.  a possible fix.
+
+    <upstream> and <downstream> have the same defaults as 'find' and, like 'list', the commits
+    presented depend on the parameters provided to limit the search done by 'find'.
 
   flag <--pending|--candidate|--deferred|--rejected> <commit>...
 
@@ -613,7 +618,7 @@ git_editor()
 
 abc_select()
 {
-	local dir commit abbrev subject flag cmd i
+	local dir commit subject flag cmd i
 	local show_deferred show_dropped show_picked
 	local cmds=()
 
@@ -623,13 +628,13 @@ abc_select()
 		--show-dropped)		show_dropped=y;;
 		--show-picked)		show_picked=y;;
 		--show-all)		show_deferred=y show_dropped=y show_picked=y;;
-		--) ;;
 		*)
-			die_error "Unknown option '$1' passed to select"
+			break
 			;;
 		esac
 		shift
 	done
+	abc_get_limits "$@"
 
 	dir=$(dirname "$ABC_TODO_PATH")
 	mkdir -p "$dir"
@@ -638,21 +643,20 @@ abc_select()
 		die "$ABC_TODO_PATH exists. Complete current selection or remove."
 	fi
 
-	git notes | awk '{print$2}' |
-	while read -r commit; do
+	git log --notes --pretty='%h %s' --grep=^ABC "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
+	while read -r commit subject; do
 		flag=$(git notes show $commit)
-		read -r abbrev subject <<<"$(git log -n1 --pretty='%h %s' $commit)"
 		if grep -q ABC_BACKPORT_CANDIDATE <<<$flag ||
 		   ( [ "$show_deferred" ] && grep -q ABC_DEFERRED_CANDIDATE <<<$flag ); then
 			if abc_should_highlight $commit; then
-				echo "VIEW $abbrev $subject" >> "$ABC_TODO_PATH"
+				echo "VIEW $commit $subject" >> "$ABC_TODO_PATH"
 			else
-				echo "view $abbrev $subject" >> "$ABC_TODO_PATH"
+				echo "view $commit $subject" >> "$ABC_TODO_PATH"
 			fi
 		elif [ "$show_dropped" ] && grep -q ABC_DONT_WANT <<<$flag; then
-			echo "drop $abbrev $subject" >> "$ABC_TODO_PATH"
+			echo "drop $commit $subject" >> "$ABC_TODO_PATH"
 		elif [ "$show_picked" ] && grep -q ABC_BACKPORT_PENDING <<<$flag; then
-			echo "pick $abbrev $subject" >> "$ABC_TODO_PATH"
+			echo "pick $commit $subject" >> "$ABC_TODO_PATH"
 		fi
 	done
 
