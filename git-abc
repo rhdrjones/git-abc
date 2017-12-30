@@ -305,6 +305,7 @@ abc_reset()
 
 abc_get_limits()
 {
+	local branches=()
 	local downstream_branch
 
 	if [ "$1" ] && [ "$1" != '--' ]; then
@@ -341,12 +342,12 @@ abc_get_limits()
 	fi
 
 	if [ "$ABC_UPSTREAM" = "" ]; then
-		downstream_branch=($(git branch --contains "$ABC_DOWNSTREAM" | sed 's/^\* //'))
-		if [ "${downstream_branch[1]}" ]; then
+		branches=($(git branch --contains "$ABC_DOWNSTREAM" | sed 's/^\* //'))
+		if [ "${branches[1]}" ]; then
 			# We don't know which branch to use in our guess, so we can't guess.
 			die "Can't guess abc.upstream from abc.downstream $ABC_DOWNSTREAM. Please specify."
 		fi
-		downstream_branch="${downstream_branch[0]}"
+		downstream_branch="${branches[0]}"
 		ABC_UPSTREAM="$downstream_branch@{upstream}"
 		if ! git rev-parse "$ABC_UPSTREAM" >&/dev/null; then
 			die "No upstream associated with '$ABC_DOWNSTREAM's branch '$downstream_branch'."
