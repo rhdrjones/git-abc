@@ -695,7 +695,7 @@ abc_select()
 EOF
 	git_editor "$ABC_TODO_PATH"
 
-	mapfile cmds < <(awk '{if (!/^ *#/ && !/^ *$/) print $1" "$2}' "$ABC_TODO_PATH")
+	mapfile cmds < <(awk '{if (!/^ *#/ && !/^ *$/) print $1" "$2}' "$ABC_TODO_PATH" | tac)
 	rm -f "$ABC_TODO_PATH"
 
 	for (( i = 0; i < ${#cmds[*]}; ++i )); do
