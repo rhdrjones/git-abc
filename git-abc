@@ -156,8 +156,9 @@ $USAGE
 
     Note, even when the upstream link is missing, wrong, or points to a
     commit in a different upstream tree, downstream commits with equivalent
-    upstream commits will still be found and linked automatically. See
-    git-cherry(1) and git-patch-id(1) for what defines equivalence.
+    upstream commits will still be found and linked automatically when
+    abc.hunt-cherries is true (see CONFIGURATION:abc.hunt-cherries below).
+    See git-cherry(1) and git-patch-id(1) for what defines equivalence.
 
   get-upstream <downstream-commit>
 
