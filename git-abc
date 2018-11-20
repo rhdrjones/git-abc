@@ -73,7 +73,7 @@ $USAGE
     variables. When both a command line parameter and an environment
     variable are provided, the command line parameter takes precedence.
 
-  list [<option>] [<upstream> [<downstream>]]
+  list|list-fixes [<option>] [<upstream> [<downstream>]]
     where <option> is one of the following
       --candidates|--deferred|--pending|--rejected|
       --downstream-only|
@@ -95,6 +95,9 @@ $USAGE
     means <upstream> and <downstream> should bind the same range, or
     subrange, of the ones used with 'find' and that the search limiting
     '<path>'s used with 'find' also limit what is listed.
+
+    When the 'list-fixes' variant is used, only the commits that are
+    highlighted are output (see 'abc.should-highlight' below)
 
   pick-list [<upstream> [<downstream>]]
 
@@ -428,7 +431,7 @@ abc_list()
 	while read -r commit subject; do
 		if abc_should_highlight $commit; then
 			echo "$(abc_highlight $commit) $subject"
-		else
+		elif [ "$ABC_ONLY_FIXES" != 'y' ]; then
 			echo "$commit $subject"
 		fi
 	done
@@ -769,6 +772,7 @@ shift
 case "$cmd" in
 find)		abc_find "$@";;
 list)		abc_list "$@";;
+list-fixes)	ABC_ONLY_FIXES=y abc_list "$@";;
 pick-list)	abc_list --pending "$@" | awk '{print$1}' | tac;;
 select)		abc_select "$@";;
 flag)		abc_flag "$@";;
