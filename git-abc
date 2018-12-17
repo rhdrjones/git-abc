@@ -167,6 +167,16 @@ $USAGE
 
     Output the corresponding upstream commit for <downstream-commit>.
 
+  get-downstream <commit>
+
+    Output the corresponding downstream commit for <commit>. This will
+    output the same commit (<commit>) if the commit is a downstream commit
+    hash or when <commit> is in the base shared by upstream and downstream.
+    A different hash (the downstream commit hash) will be output when
+    <commit> is an upstream commit and has been backported. Nothing will
+    be output if <commit> is not in the downstream branch and has not been
+    backported.
+
   reset [-f]
 
     Clear all ABC flags. -f forces clearing without a final "are you sure?"
@@ -336,11 +346,47 @@ abc_reset()
 	git notes | awk '{print$2}' | git notes remove --stdin 2>/dev/null
 }
 
-abc_get_limits()
+abc_get_downstream_revision()
+{
+	if [ "$ABC_DOWNSTREAM" = "" ]; then
+		ABC_DOWNSTREAM=$(git config --get abc.downstream)
+		if [ "$ABC_DOWNSTREAM" ] && ! git rev-parse --verify -q "$ABC_DOWNSTREAM" >/dev/null; then
+			die_error "abc.downstream='$ABC_DOWNSTREAM' is not a valid downstream revision"
+		elif [ "$ABC_DOWNSTREAM" = "" ]; then
+			ABC_DOWNSTREAM=HEAD
+		fi
+	fi
+}
+
+abc_get_upstream_revision()
 {
 	local branches=()
 	local downstream_branch
 
+	if [ "$ABC_UPSTREAM" = "" ]; then
+		ABC_UPSTREAM=$(git config --get abc.upstream)
+		if [ "$ABC_UPSTREAM" ] && ! git rev-parse --verify -q "$ABC_UPSTREAM" >/dev/null; then
+			die_error "abc.upstream='$ABC_UPSTREAM' is not a valid upstream revision"
+		fi
+	fi
+
+	if [ "$ABC_UPSTREAM" = "" ]; then
+		abc_get_downstream_revision
+		branches=($(git branch --contains "$ABC_DOWNSTREAM" | sed 's/^\* //'))
+		if [ "${branches[1]}" ]; then
+			# We don't know which branch to use in our guess, so we can't guess.
+			die "Can't guess abc.upstream from abc.downstream $ABC_DOWNSTREAM. Please specify."
+		fi
+		downstream_branch="${branches[0]}"
+		ABC_UPSTREAM="$downstream_branch@{upstream}"
+		if ! git rev-parse "$ABC_UPSTREAM" >&/dev/null; then
+			die "No upstream associated with '$ABC_DOWNSTREAM's branch '$downstream_branch'."
+		fi
+	fi
+}
+
+abc_get_limits()
+{
 	if [ "$1" ] && [ "$1" != '--' ]; then
 		if git rev-parse --verify -q "$1" >/dev/null; then
 			ABC_UPSTREAM=$1
@@ -358,34 +404,8 @@ abc_get_limits()
 		ABC_PATHS="$*"
 	fi
 
-	if [ "$ABC_UPSTREAM" = "" ]; then
-		ABC_UPSTREAM=$(git config --get abc.upstream)
-		if [ "$ABC_UPSTREAM" ] && ! git rev-parse --verify -q "$ABC_UPSTREAM" >/dev/null; then
-			die_error "abc.upstream='$ABC_UPSTREAM' is not a valid upstream revision"
-		fi
-	fi
-
-	if [ "$ABC_DOWNSTREAM" = "" ]; then
-		ABC_DOWNSTREAM=$(git config --get abc.downstream)
-		if [ "$ABC_DOWNSTREAM" ] && ! git rev-parse --verify -q "$ABC_DOWNSTREAM" >/dev/null; then
-			die_error "abc.downstream='$ABC_DOWNSTREAM' is not a valid downstream revision"
-		elif [ "$ABC_DOWNSTREAM" = "" ]; then
-			ABC_DOWNSTREAM=HEAD
-		fi
-	fi
-
-	if [ "$ABC_UPSTREAM" = "" ]; then
-		branches=($(git branch --contains "$ABC_DOWNSTREAM" | sed 's/^\* //'))
-		if [ "${branches[1]}" ]; then
-			# We don't know which branch to use in our guess, so we can't guess.
-			die "Can't guess abc.upstream from abc.downstream $ABC_DOWNSTREAM. Please specify."
-		fi
-		downstream_branch="${branches[0]}"
-		ABC_UPSTREAM="$downstream_branch@{upstream}"
-		if ! git rev-parse "$ABC_UPSTREAM" >&/dev/null; then
-			die "No upstream associated with '$ABC_DOWNSTREAM's branch '$downstream_branch'."
-		fi
-	fi
+	abc_get_downstream_revision
+	abc_get_upstream_revision
 }
 
 abc_should_highlight()
@@ -519,6 +539,26 @@ abc_get_upstream()
 		die_error "'$commit' is not a valid commit"
 	fi
 	git log -n1 --pretty='%h %s' "$(abc_get_upstream_nocheck $commit)"
+}
+
+abc_get_downstream()
+{
+	local commit=$1
+	local downstream
+
+	downstream=$(git notes show $commit 2>/dev/null | grep -e ABC_DOWNSTREAM)
+	if [ "$downstream" ]; then
+		echo ${downstream#*=}
+		return 0
+	fi
+
+	abc_get_downstream_revision
+	if git branch --contains $commit | egrep -q "[\*| ] $(git branch --points-at $ABC_DOWNSTREAM)$"; then
+		git log -n1 --pretty=%H $commit
+		return 0
+	fi
+
+	return 1
 }
 
 abc_list_flag()
@@ -781,6 +821,7 @@ accept)		abc_flag --pending "$@";;
 defer)		abc_flag --deferred "$@";;
 set-upstream)	abc_set_upstream "$@";;
 get-upstream)	abc_get_upstream "$1";;
+get-downstream)	abc_get_downstream "$1";;
 reset)		abc_reset "$1";;
 import)		abc_import "$1";;
 export)		abc_export;;
