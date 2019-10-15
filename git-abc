@@ -538,6 +538,9 @@ abc_get_upstream()
 	if ! git rev-parse --verify -q "$commit^{commit}" >/dev/null; then
 		die_error "'$commit' is not a valid commit"
 	fi
+	if git notes show $commit | grep -q ABC_ONLY_DOWNSTREAM; then
+		die "'$commit' is a downstream-only commit"
+	fi
 	git log -n1 --pretty='%h %s' "$(abc_get_upstream_nocheck $commit)"
 }
 
