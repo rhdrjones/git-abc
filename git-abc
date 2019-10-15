@@ -269,6 +269,13 @@ abc_set_flag()
 	git notes add -f -m $flag $commit 2>/dev/null
 }
 
+abc_is_downstream_only()
+{
+	local commit=$1
+	git notes show $commit 2>/dev/null | grep -q ABC_ONLY_DOWNSTREAM
+	return $?
+}
+
 abc_import()
 {
 	local fd flag commit link
@@ -531,6 +538,7 @@ abc_get_upstream_nocheck()
 abc_get_upstream()
 {
 	local commit=$1
+	local upstream
 
 	if [ "$commit" = "" ]; then
 		die_error "get-upstream requires a parameter: <downstream-commit>"
@@ -538,10 +546,17 @@ abc_get_upstream()
 	if ! git rev-parse --verify -q "$commit^{commit}" >/dev/null; then
 		die_error "'$commit' is not a valid commit"
 	fi
-	if git notes show $commit | grep -q ABC_ONLY_DOWNSTREAM; then
-		die "'$commit' is a downstream-only commit"
+	if abc_is_downstream_only $commit; then
+		die "'$commit' is downstream-only"
 	fi
-	git log -n1 --pretty='%h %s' "$(abc_get_upstream_nocheck $commit)"
+
+	upstream=$(abc_get_upstream_nocheck $commit)
+	if [ "$upstream" ]; then
+		git log -n1 --pretty='%h %s' $upstream
+		return
+	fi
+
+	die "No upstream for '$commit' found"
 }
 
 abc_get_downstream()
