@@ -22,21 +22,39 @@ ABC_DEFAULT_TODO_PATH="git-abc-todo"
 # Set parameters per the user's environment or config
 : "${ABC_SHOULD_HIGHLIGHT:=$(git config --get abc.should-highlight)}"
 : "${ABC_UPSTREAM_LINK:=$(git config --get abc.upstream-link)}"
-: "${ABC_HUNT_CHERRIES:=$(git config --get abc.hunt-cherries)}"
 : "${ABC_NAMESPACE:=$(git config --get abc.namespace)}"
-: "${ABC_TODO_PATH:=$(git config --get abc.todo-path)}"
+: "${ABC_TODO_PATH:=$(git config --get --type path abc.todo-path)}"
 [ -t 1 ] && ABC_COLOR=$(git config --get-colorbool color.ui 'true')
 
 # Set defaults for anything still not set
 : "${ABC_SHOULD_HIGHLIGHT:=$ABC_DEFAULT_SHOULD_HIGHLIGHT}"
 : "${ABC_UPSTREAM_LINK:=$ABC_DEFAULT_UPSTREAM_LINK}"
-: "${ABC_HUNT_CHERRIES:=false}"
 : "${ABC_NAMESPACE:=$ABC_DEFAULT_NAMESPACE}"
 : "${ABC_TODO_PATH:=$GIT_DIR/$ABC_DEFAULT_TODO_PATH}"
 : "${ABC_COLOR:=false}"
 
 die() { echo "$1" >&2; exit 1; }
 die_error() { echo "Error: $1" >&2; exit 1; }
+
+get_bool()
+{
+	git -c abc.not-a-config="$1" config --get --type bool abc.not-a-config 2>/dev/null
+	return $?
+}
+
+if test -v ABC_HUNT_CHERRIES; then
+	if get_bool "$ABC_HUNT_CHERRIES" >&/dev/null; then
+		ABC_HUNT_CHERRIES=$(get_bool "$ABC_HUNT_CHERRIES")
+	else
+		die_error "ABC_HUNT_CHERRIES=$ABC_HUNT_CHERRIES is not boolean"
+	fi
+elif git config --get --type bool abc.hunt-cherries >&/dev/null; then
+	ABC_HUNT_CHERRIES=$(git config --get --type bool abc.hunt-cherries)
+elif git config --get abc.hunt-cherries >&/dev/null; then
+	die_error "abc.hunt-cherries=$(git config --get abc.hunt-cherries) is not boolean"
+else
+	ABC_HUNT_CHERRIES="false"
+fi
 
 if grep -q '/' <<<"$ABC_NAMESPACE"; then
 	die_error "The namespace may not contain '/'"
