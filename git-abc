@@ -476,7 +476,7 @@ abc_list()
 	--deferred)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_DEFERRED_CANDIDATE;;
 	--pending)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_BACKPORT_PENDING;;
 	--rejected)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_DONT_WANT;;
-	--backported)			range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag='ABC_UPSTREAM\|ABC_CHERRYPICK';;
+	--backported)			range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag='ABC_UPSTREAM\|^ABC_CHERRYPICK';;
 	--backported-non-trivial)	range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_UPSTREAM;;
 	--backported-cherry-picks)	range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_CHERRYPICK;;
 	--downstream-only)		range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_ONLY_DOWNSTREAM;;
