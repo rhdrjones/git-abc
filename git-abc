@@ -759,7 +759,7 @@ abc_select()
 		die "$ABC_TODO_PATH exists. Complete current selection or remove."
 	fi
 
-	git log --notes --pretty='%h %s' --grep=^ABC "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
+	git log --notes --pretty='%h %s' --grep=^ABC_ "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
 	while read -r commit subject; do
 		flag=$(git notes show $commit)
 		if grep -q ABC_BACKPORT_CANDIDATE <<<$flag ||
