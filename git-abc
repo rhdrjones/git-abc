@@ -167,15 +167,9 @@ $USAGE
 
     Output the corresponding upstream commit for <downstream-commit>.
 
-  get-downstream <commit>
+  get-downstream <upstream-commit>
 
-    Output the corresponding downstream commit for <commit>. This will
-    output the same commit (<commit>) if the commit is a downstream commit
-    hash or when <commit> is in the base shared by upstream and downstream.
-    A different hash (the downstream commit hash) will be output when
-    <commit> is an upstream commit and has been backported. Nothing will
-    be output if <commit> is not in the downstream branch and has not been
-    backported.
+    Output the corresponding downstream commit for <upstream-commit>.
 
   reset [-f]
 
@@ -564,19 +558,20 @@ abc_get_downstream()
 	local commit=$1
 	local downstream
 
+	if [ "$commit" = "" ]; then
+		die_error "get-downstream requires a parameter: <upstream-commit>"
+	fi
+	if ! git rev-parse --verify -q "$commit^{commit}" >/dev/null; then
+		die_error "'$commit' is not a valid commit"
+	fi
+
 	downstream=$(git notes show $commit 2>/dev/null | grep -e ABC_DOWNSTREAM)
 	if [ "$downstream" ]; then
-		echo ${downstream#*=}
-		return 0
+		git log -n1 --pretty='%h %s' ${downstream#*=}
+		return
 	fi
 
-	abc_get_downstream_revision
-	if git branch --contains $commit | egrep -q "[\*| ] $(git branch --points-at $ABC_DOWNSTREAM)$"; then
-		git log -n1 --pretty=%H $commit
-		return 0
-	fi
-
-	return 1
+	die "No downstream for '$commit' found"
 }
 
 abc_list_flag()
