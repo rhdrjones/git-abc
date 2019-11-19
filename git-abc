@@ -221,6 +221,14 @@ $USAGE
 
     Export flag settings to stdout.
 
+  get-config [<upstream> [<downstream>]] [[--] <path>...]
+
+    Display the configuration variables determined from the environment
+    and git configuration. The {upstream} and {downstream} displayed are
+    the same as would be selected with the other commands such as 'find'
+    and 'list' when given the same input. The configuration is output with
+    shell quoting, ready to be import to the callers environment.
+
   help
 
     This help text.
@@ -940,6 +948,20 @@ EOF
 	done
 }
 
+abc_get_config()
+{
+	abc_get_limits "$@"
+
+	printf 'ABC_NAMESPACE=%q\n'		"$ABC_NAMESPACE"
+	printf 'ABC_TODO_PATH=%q\n'		"$ABC_TODO_PATH"
+	printf 'ABC_SHOULD_HIGHLIGHT=%q\n'	"$ABC_SHOULD_HIGHLIGHT"
+	printf 'ABC_UPSTREAM_LINK=%q\n'		"$ABC_UPSTREAM_LINK"
+	printf 'ABC_HUNT_CHERRIES=%q\n'		"$ABC_HUNT_CHERRIES"
+	printf 'ABC_UPSTREAM=%q\n'		"$ABC_UPSTREAM"
+	printf 'ABC_DOWNSTREAM=%q\n'		"$ABC_DOWNSTREAM"
+	printf 'ABC_PATHS=%q\n'			"$ABC_PATHS"
+}
+
 cmd=$1
 shift
 case "$cmd" in
@@ -959,6 +981,7 @@ get-downstream)			abc_get_downstream "$1";;
 reset)				abc_reset "$1";;
 import)				abc_import "$1";;
 export)				abc_export;;
+get-config)			abc_get_config "$@";;
 -h|help)			abc_help;;
 *)
 	echo "$USAGE"
