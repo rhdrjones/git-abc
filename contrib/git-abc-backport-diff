@@ -1,0 +1,150 @@
+#!/bin/bash
+#SPDX-License-Identifier: MIT
+
+git rev-parse --git-dir >/dev/null
+
+cmd="git-abc-backport-diff"
+
+help()
+{
+	cat <<EOF
+$cmd [OPTIONS]
+OPTIONS:
+    -r git range
+       optional; default is '\${ABC_DOWNSTREAM}..'
+    -u upstream git tag / branch / id
+       optional; default is '\$ABC_UPSTREAM'
+    -S summary only (no diff viewing)
+    -h help
+
+    You can set each of the default options using git-config:
+      git config backport-diff.upstream
+      git config backport-diff.range
+      git config backport-diff.summary
+
+(Currently summary (-S) is the only supported feature and must be selected.)
+EOF
+}
+
+do_summary()
+{
+	declare -i total count
+
+	echo 'Key:'
+	echo '[----] : patches are identical'
+	echo '[####] : number of functional differences between upstream/downstream patch'
+	echo '[down] : patch is downstream-only'
+	echo 'The flags [FC] indicate (F)unctional and (C)ontextual differences, respectively'
+	echo
+
+	total=$(git rev-list --count $range)
+	count=1
+
+	git log --reverse --pretty='%h %s' $range | while read -r c subject; do
+		[[ ${diff_functional[$c]} ]] || diff_functional[$c]=0
+		[[ ${diff_contextual[$c]} ]] || diff_contextual[$c]=0
+
+		if [[ ${diff_functional[$c]} != 0 ]]; then
+			field1=$(printf "%04d" ${diff_functional[$c]})
+		elif git notes --ref $ABC_NAMESPACE show $c 2>/dev/null | grep -q ABC_ONLY_DOWNSTREAM; then
+			field1='down'
+		else
+			field1='----'
+		fi
+
+		if [[ ${diff_functional[$c]} != 0 ]] && [[ ${diff_contextual[$c]} != 0 ]]; then
+			flags='FC'
+		elif [[ ${diff_functional[$c]} != 0 ]]; then
+			flags='F-'
+		elif [[ ${diff_contextual[$c]} != 0 ]]; then
+			flags='-C'
+		else
+			flags='--'
+		fi
+
+		if [[ $field1 == down ]]; then
+			flags=""
+		else
+			flags=" [$flags]"
+		fi
+
+		printf "%03d/$total:[$field1]$flags '%s'\n" "$count" "$subject"
+		((++count))
+	done
+}
+
+if git range-diff |& grep -q 'not a git command'; then
+	echo "$cmd requires git-range-diff"
+	exit 1
+fi
+if ! command -v git-abc >/dev/null; then
+	echo "$cmd requires git-abc"
+	exit 1
+fi
+
+range=$(git config backport-diff.range || true)
+upstream=$(git config backport-diff.upstream || true)
+summary=$(git config backport-diff.summary || true)
+while [[ $1 ]]; do
+	case "$1" in
+	-r)	range=$2; shift 2;;
+	-u)	upstream=$2; shift 2;;
+	-S)	summary=y; shift;;
+	-h)	help; exit;;
+	*)	shift;;
+	esac
+done
+if [[ $summary != y ]]; then
+	echo "Summary (-S) must be selected."
+	exit 1
+fi
+if [[ ${range:(-2)} == '^!' ]]; then
+	base=${range:0:(-1)}
+	range="${base}..${range:0:(-2)}"
+elif [[ $range ]]; then
+	base=${range/..*/}
+fi
+if [[ $base ]] && [[ ! $upstream ]]; then
+	upstream=$(git abc get-config | awk -F= '/^ABC_UPSTREAM=/ {print$2}')
+	if [[ ! $upstream ]]; then
+		echo "No upstream known for base $base" >&2
+		exit 1
+	fi
+fi
+
+git abc get-config $upstream $base -- >/dev/null || exit $?
+eval export $(git abc get-config $upstream $base --)
+export ABC_NAMESPACE="git-abc-$(mktemp -u XXXXXXXX)"
+export ABC_HUNT_CHERRIES=false
+
+if [[ ! $range ]]; then
+	base=$ABC_DOWNSTREAM
+	range="${base}.."
+elif [[ ! $range =~ '..' ]]; then
+	echo "fatal: no .. in range: '$range'"
+	exit 1
+fi
+if [[ ! $upstream ]]; then
+	upstream=$ABC_UPSTREAM
+fi
+
+# FIXME: Need to improve the performance set-upstream-range with a specified upstream range,
+#	 otherwise it's just not practical to use it. A workaround is to only run this in a
+#	 git repo with the desired upstream available, as set-upstream-range will still complain
+#	 when the upstream commits aren't valid.
+#upstream_range="$(git merge-base $base $upstream)..${upstream}"
+
+trap 'git abc reset -f; exit' EXIT HUP INT TERM
+git abc set-upstream-range $range $upstream_range 2>/dev/null
+
+declare -A diff_functional diff_contextual
+for c in $(git log --reverse --pretty='%h:%N' --notes=$ABC_NAMESPACE --grep ABC_UPSTREAM $range); do
+	u=${c/*=/} c=${c/:*/}
+	diff_no_msg=$(git range-diff $u^..$u $c^..$c | awk '{if (/^    [ +-] diff / || p) {print$0; p=1}}')
+	diff_functional[$c]=$(grep -c -e '^    ++' -e '^    --' -e '^    +-' -e '^    -+' <<<"$diff_no_msg")
+	diff_contextual[$c]=$(grep -c -e '^    + ' -e '^    - ' -e '^     +' -e '^     -' <<<"$diff_no_msg")
+done
+
+if [[ $summary == y ]]; then
+	do_summary
+fi
