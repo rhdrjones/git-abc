@@ -1,0 +1,241 @@
+.TH "GIT\-ABC" "1" "2020-03-23" "" "Local man page"
+.nh
+.ad l
+.SH "NAME"
+git-abc \- Find and manage backport candidates
+.SH "SYNOPSIS"
+.sp
+.nf
+\fIgit abc\fR find [<upstream> [<downstream>]] [[--] <path>...]
+\fIgit abc\fR list|list-fixes [<option>] [<upstream> [<downstream>]]
+\fIgit abc\fR pick-list [<upstream> [<downstream>]]
+\fIgit abc\fR select [<option>] [<upstream> [<downstream>]]
+\fIgit abc\fR flag <flag-option> <commit>...
+\fIgit abc\fR reject <commit>...
+\fIgit abc\fR accept <commit>...
+\fIgit abc\fR defer <commit>...
+\fIgit abc\fR set-upstream <downstream-commit> <upstream-commit>
+\fIgit abc\fR set-upstream-range [<downstream-range>] [<upstream-range>]
+\fIgit abc\fR get-upstream <downstream-commit>
+\fIgit abc\fR get-downstream <upstream-commit>
+\fIgit abc\fR reset [--force]
+\fIgit abc\fR import [<file>]
+\fIgit abc\fR export
+\fIgit abc\fR get-config [<upstream> [<downstream>]] [[--] <path>...]
+.fi
+.SH "DESCRIPTION"
+A Backporter's Companion (ABC) aids developers with finding commits in a fast paced project (upstream) that should be backported to a slower paced fork (downstream).
+git-abc's goal is to provide developers with an easy and efficient workflow by wrapping \fBgit-log\fR(1) up with some additional filtering and logic into simple commands and by maintaining the selection state (accept/reject) of backport candidates.
+All state is stored in the git repository using \fBgit-notes\fR(1).
+.SH "SUBCOMMANDS"
+.PP
+find [<upstream> [<downstream>]] [[--] <path>...]
+.RS 4
+Find backport candidates in the symmetric difference of <upstream> and <downstream> related to files in <path>...
+When not provided, <upstream> defaults to the abc.upstream configuration setting and <downstream> defaults to abc.downstream.
+When the configuration settings are not set, then upstream defaults to <branch-of-<downstream>>@{upstream}, if it exists, and downstream defaults to HEAD.
+<path>... defaults to all files.
+.sp
+The <upstream>, <downstream>, and <path>... parameters may also be provided with ABC_UPSTREAM, ABC_DOWNSTREAM, and ABC_PATHS environment variables.
+When both a command line parameter and an environment variable are provided, the command line parameter takes precedence.
+.RE
+.PP
+list|list-fixes [<option>] [<upstream> [<downstream>]]
+.RS 4
+.nf
+where <option> is one of the following
+--candidates|--deferred|--pending|--rejected|
+--downstream-only|
+--backported|--backported-non-trivial|--backported-cherry-picks
+.fi
+.sp
+List backport candidates (--candidates), deferred backport candidates (--deferred), pending backports (--pending), commits rejected for backport (--rejected), commits that are downstream only (--downstream-only), all commits already backported (--backported), just commits already backported that were non-trivial (--backported-non-trivial), or just commits already backported that were cherry picks (--backported-cherry-picks).
+When no option is given, defaults to listing backport candidates.
+<upstream> and <downstream> have the same defaults as 'find'.
+When the color.ui configuration setting is true, interesting commits, e.g. possible fixes, are highlighted.
+.sp
+Note, 'list' only lists commits previously found with 'find', which means <upstream> and <downstream> should bind the same range, or subrange, of the ones used with 'find' and that the search limiting <path>'s used with 'find' also limit what is listed.
+.sp
+When the 'list-fixes' variant is used, only the commits that are highlighted are output (see 'abc.should-highlight' below)
+.RE
+.PP
+pick-list [<upstream> [<downstream>]]
+.RS 4
+List the pending backports, like 'list --pending', but output the list in a \fBgit-cherry-pick\fR(1) friendly way, i.e. only the commit hashes and in reverse order.
+.RE
+.PP
+select [<option>] [<upstream> [<downstream>]]
+.RS 4
+.nf
+where <option> is one of the following
+--show-deferred|--show-dropped|--show-picked|--show-all
+.fi
+.sp
+Run an interactive session to make selection decisions about the candidates previously found with 'find'.
+Only backport candidates are shown when 'select' is used without options.
+The options --show-deferred, --show-dropped, and --show-picked may be used to also show respectively deferred candidates, rejected candidates, and pending backports.
+The option --show-all specifies all of them.
+Each commit's ABC flag is used to determine its suggested action: \(cqview' for a backport candidate (or deferred candidate), 'drop' for a commit rejected for backport, and 'pick' for a pending backport.
+The suggested action is 'VIEW' (capitalized 'view') when the commit looks like an interesting commit, e.g. a possible fix.
+.sp
+<upstream> and <downstream> have the same defaults as 'find' and, like 'list', the commits presented depend on the parameters provided to limit the search done by 'find'.
+.RE
+.PP
+flag <--pending|--candidate|--deferred|--rejected> <commit>...
+.RS 4
+Flag <commit>('s) as pending backport(s), backport candidate(s), deferred backport candidate(s), or commit(s) rejected for backport.
+.RE
+.PP
+reject <commit>...
+.RS 4
+This is an alias for 'flag --rejected'
+.RE
+.PP
+accept <commit>...
+.RS 4
+This is an alias for 'flag --pending'
+.RE
+.PP
+defer <commit>...
+.RS 4
+This is an alias for 'flag --deferred'
+.sp
+Deferred backport candidates are normal candidates, except they don't appear in the candidates' listings.
+Deferring candidates allows one to reduce the candidate list to a more manageable length without needing to make all decisions at once.
+.RE
+.PP
+set-upstream <downstream-commit> <upstream-commit>
+.RS 4
+If a commit shows up in 'list --downstream-only', which does have a corresponding upstream commit, then this command allows the linkage to be manually applied.
+If this command is needed frequently, then, either the backports were done from a different upstream than what was specified with 'find', or there are problems with the upstream-link expression (see CONFIGURATION:abc.upstream-link below) or with the backports not getting upstream links added to their commit messages.
+.sp
+Note, even when the upstream link is missing, wrong, or points to a commit in a different upstream tree, downstream commits with equivalent upstream commits will still be found and linked automatically when abc.hunt-cherries is true (see CONFIGURATION:abc.hunt-cherries below).
+See \fBgit-cherry\fR(1) and \fBgit-patch-id\fR(1) for what defines equivalence.
+.RE
+.PP
+set-upstream-range [<downstream-range>] [<upstream-range>]
+.RS 4
+When a downstream range is known to have commits with upstream-links, then this command can be used to quickly set the upstream linkage of each commit in the range.
+.sp
+If <downstream-range> is not provided then it defaults to '{downstream}..',  where {downstream} is the same as what would be selected for <downstream> of the 'find' command when it's not provided.
+.sp
+If <upstream-range> is provided then the linkage will only be set if the linked upstream commit is within that range.
+.sp
+When true, abc.hunt-cherries (see CONFIGURATION:abc.hunt-cherries below) will enable cherry-pick searching, just as it does for the 'find' command.
+However 'find' should be run first with the upstream that should be searched for the potential cherry-picks.
+.RE
+.PP
+get-upstream <downstream-commit>
+.RS 4
+Output the corresponding upstream commit for <downstream-commit>.
+.RE
+.PP
+get-downstream <upstream-commit>
+.RS 4
+Output the corresponding downstream commit for <upstream-commit>.
+.RE
+.PP
+reset [--force]
+.RS 4
+Clear all ABC flags.
+--force or -f forces clearing without a final "are you sure?" prompting.
+.RE
+.PP
+import [<file>]
+.RS 4
+Import flag settings from <file>, if given, otherwise from stdin.
+.RE
+.PP
+export
+.RS 4
+Export flag settings to stdout.
+.RE
+.PP
+get-config [<upstream> [<downstream>]] [[--] <path>...]
+.RS 4
+Display the configuration variables determined from the environment and git configuration.
+The {upstream} and {downstream} displayed are the same as would be selected with the other commands such as 'find' and 'list' when given the same input.
+The configuration is output with shell quoting, ready to be import to the callers environment.
+.RE
+.SH CONFIGURATION
+.PP
+abc.upstream
+.RS 4
+The upstream revision pointer, see \fBgitrevisions\fR(7).
+.RE
+.PP
+abc.downstream
+.RS 4
+The downstream revision pointer, see \fBgitrevisions\fR(7).
+.RE
+.PP
+abc.namespace
+.RS 4
+The name of the namespace to use.
+The name may not contain '/'.
+(Internally this name will be prefixed with refs/notes/ and used as a \fBgit-notes\fR(1) ref.) The default is 'git-abc'
+.sp
+The ABC_NAMESPACE environment variable may be used to override this config.
+.RE
+.PP
+abc.should-highlight
+.RS 4
+Comma separated list of <place-holders>:<regex> pairs used to identify interesting commits, e.g. possible fixes.
+<place-holders> are git pretty format place holders (see \fBgit-log\fR(1) PRETTY FORMATS).
+When listing commits, each commit will have each set of place holders checked with its extended regular expression <regex>.
+If there's a match, then the commit is highlighted as an interesting commit.
+The default is:
+.sp
+.nf
+  '%s:fix|Fix|FIX|Revert,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]'
+.fi
+.sp
+The ABC_SHOULD_HIGHLIGHT environment variable may be used to override this config.
+.RE
+.PP
+abc.upstream-link
+.RS 4
+Comma separated list of <place-holders>:<regex> pairs used to identify upstream links, which are references embedded in downstream commits that point to their corresponding upstream commits.
+<place-holders> are git pretty format place holders (see \fBgit-log\fR(1) PRETTY FORMATS).
+When looking for a corresponding upstream commit, the downstream commit will have each set of place holders checked with its extended regular expression <regex>.
+If there's a match, then the match is used for the upstream link.
+The default is:
+.sp
+.nf
+  '%b:^commit ([0-9a-f]{40})$,%b:^\\(cherry picked from commit ([0-9a-f]{40})\\)$'
+.fi
+.sp
+The ABC_UPSTREAM_LINK environment variable may be used to override this config.
+.RE
+.PP
+abc.hunt-cherries
+.RS 4
+Try harder to find cherry-picks, including ones that have missing or malformed upstream links, or that have upstream links pointing to commits in a different tree than has been specified as <upstream>.
+This is expensive to do, so it's off ('false') by default.
+To enable, set to 'true'.
+.sp
+The ABC_HUNT_CHERRIES environment variable may be used to override this config.
+.RE
+.PP
+abc.todo-path
+.RS 4
+The path of the file to create and use while editing the backport candidate list with 'select'.
+The default is:
+.sp
+.nf
+  "$GIT_DIR/git-abc-todo"
+.fi
+.sp
+The ABC_TODO_PATH environment variable may be used to override this config.
+.RE
+.SH "ENVIRONMENT"
+.nf
+ABC_NAMESPACE
+ABC_TODO_PATH
+ABC_SHOULD_HIGHLIGHT
+ABC_UPSTREAM_LINK
+ABC_HUNT_CHERRIES
+ABC_UPSTREAM
+ABC_DOWNSTREAM
+ABC_PATHS
+.fi

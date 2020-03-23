@@ -22,10 +22,12 @@ Getting Started
 Install by simply copying git-abc to somewhere in ``$PATH`` and ensuring
 it has execute permissions::
 
-  $ mv ~/Downloads/git-abc ~/bin/
-  $ chmod u+x ~/bin/git-abc
+  $ curl https://raw.githubusercontent.com/rhdrjones/git-abc/master/git-abc > ~/Downloads/git-abc
+  $ curl https://raw.githubusercontent.com/rhdrjones/git-abc/master/man/man1/git-abc.1 | gzip > ~/Downloads/git-abc.1.gz
+  $ install -D -t ~/bin ~/Downloads/git-abc
+  $ install -m 444 -D -t ~/.local/share/man/man1 ~/Downloads/git-abc.1.gz
 
-Then, to get started, take a look at the help text ('git-abc help') and
+Then, to get started, take a look at the man page ('git help abc') and
 follow the steps in the "Workflow" section below.
 
 Workflow
@@ -228,8 +230,8 @@ and, for VFIO, they are found and listed with::
 Additional Features
 ===================
 
-There are additional features documented in the help text
-('git-abc help'), but not exhibited in the workflow above.  Those features
+There are additional features documented in the man page
+('git help abc'), but not exhibited in the workflow above.  Those features
 are mostly for ABC flag maintenance.  For example, 'git-abc export' and
 'git-abc import' are for saving and restoring the ABC flags, and
 'git-abc reset' deletes them.  'git-abc flag' enables the user to easily
