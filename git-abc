@@ -12,13 +12,40 @@
 # file or http://opensource.org/licenses/MIT.
 #
 
-USAGE="usage: git-abc <command> [<options>]"
-GIT_DIR=$(git rev-parse --git-dir)
+# shellcheck disable=SC2034
+{
+SUBDIRECTORY_OK=true
+USAGE="<subcommand> [<options>]"
+LONG_USAGE="Find and manage backport candidates
+
+  git abc find [<upstream> [<downstream>]] [[--] <path>...]
+  git abc list|list-fixes [<option>] [<upstream> [<downstream>]]
+  git abc pick-list [<upstream> [<downstream>]]
+  git abc select [<option>] [<upstream> [<downstream>]]
+  git abc flag <flag-option> <commit>...
+  git abc reject <commit>...
+  git abc accept <commit>...
+  git abc defer <commit>...
+  git abc set-upstream <downstream-commit> <upstream-commit>
+  git abc set-upstream-range [<downstream-range>] [<upstream-range>]
+  git abc get-upstream <downstream-commit>
+  git abc get-downstream <upstream-commit>
+  git abc reset [--force]
+  git abc import [<file>]
+  git abc export
+  git abc get-config [<upstream> [<downstream>]] [[--] <path>...]
+
+  See 'git help abc'
+"
+}
+# shellcheck disable=SC1090
+. "$(git --exec-path)/git-sh-setup"
+set_reflog_action abc
 
 ABC_DEFAULT_SHOULD_HIGHLIGHT="%s:fix|Fix|FIX|Revert,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]"
 ABC_DEFAULT_UPSTREAM_LINK="%b:^commit ([0-9a-f]{40})$,%b:^\(cherry picked from commit ([0-9a-f]{40})\)$"
 ABC_DEFAULT_NAMESPACE="git-abc"
-ABC_DEFAULT_TODO_PATH="git-abc-todo"
+ABC_DEFAULT_TODO_PATH="$GIT_DIR/git-abc-todo"
 
 # Set parameters per the user's environment or config
 : "${ABC_SHOULD_HIGHLIGHT:=$(git config --get abc.should-highlight)}"
@@ -31,11 +58,10 @@ ABC_DEFAULT_TODO_PATH="git-abc-todo"
 : "${ABC_SHOULD_HIGHLIGHT:=$ABC_DEFAULT_SHOULD_HIGHLIGHT}"
 : "${ABC_UPSTREAM_LINK:=$ABC_DEFAULT_UPSTREAM_LINK}"
 : "${ABC_NAMESPACE:=$ABC_DEFAULT_NAMESPACE}"
-: "${ABC_TODO_PATH:=$GIT_DIR/$ABC_DEFAULT_TODO_PATH}"
+: "${ABC_TODO_PATH:=$ABC_DEFAULT_TODO_PATH}"
 : "${ABC_COLOR:=false}"
 
-die() { echo "$1" >&2; exit 1; }
-die_error() { echo "Error: $1" >&2; exit 1; }
+die_error() { echo -n "Error: " >&2; die "$1"; }
 
 get_bool()
 {
@@ -61,6 +87,10 @@ if grep -q '/' <<<"$ABC_NAMESPACE"; then
 	die_error "The namespace may not contain '/'"
 fi
 export GIT_NOTES_REF="refs/notes/$ABC_NAMESPACE"
+
+if [ -e "$ABC_TODO_PATH" ] && [ ! -d "$ABC_TODO_PATH" ]; then
+	die_error "ABC_TODO_PATH=$ABC_TODO_PATH is not a directory"
+fi
 
 abc_highlight()
 {
@@ -601,21 +631,9 @@ abc_flag()
 	done
 }
 
-git_editor()
-{
-	local file="$1"
-	local editor
-
-	editor=$(git var GIT_EDITOR)
-	case "$editor" in
-	vim) editor='vim +"setf gitrebase"';;
-	esac
-	eval "$editor" "$file"
-}
-
 abc_select()
 {
-	local dir commit subject flag cmd i
+	local todo commit subject flag cmd i
 	local show_deferred show_dropped show_picked
 	local cmds=()
 
@@ -633,11 +651,11 @@ abc_select()
 	done
 	abc_get_limits "$@"
 
-	dir=$(dirname "$ABC_TODO_PATH")
-	mkdir -p "$dir"
+	mkdir -p "$ABC_TODO_PATH"
+	todo="$ABC_TODO_PATH/git-rebase-todo"
 
-	if [ -e "$ABC_TODO_PATH" ]; then
-		die "$ABC_TODO_PATH exists. Complete current selection or remove."
+	if [ -e "$todo" ]; then
+		die "$todo exists. Complete current selection or remove."
 	fi
 
 	git log --notes --pretty='%h %s' --grep=^ABC_ "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
@@ -646,22 +664,22 @@ abc_select()
 		if grep -q ABC_BACKPORT_CANDIDATE <<<$flag ||
 		   ( [ "$show_deferred" ] && grep -q ABC_DEFERRED_CANDIDATE <<<$flag ); then
 			if abc_should_highlight $commit; then
-				echo "VIEW $commit $subject" >> "$ABC_TODO_PATH"
+				echo "VIEW $commit $subject" >> "$todo"
 			else
-				echo "view $commit $subject" >> "$ABC_TODO_PATH"
+				echo "view $commit $subject" >> "$todo"
 			fi
 		elif [ "$show_dropped" ] && grep -q ABC_DONT_WANT <<<$flag; then
-			echo "drop $commit $subject" >> "$ABC_TODO_PATH"
+			echo "drop $commit $subject" >> "$todo"
 		elif [ "$show_picked" ] && grep -q ABC_BACKPORT_PENDING <<<$flag; then
-			echo "pick $commit $subject" >> "$ABC_TODO_PATH"
+			echo "pick $commit $subject" >> "$todo"
 		fi
 	done
 
-	if [ ! -e "$ABC_TODO_PATH" ]; then
+	if [ ! -e "$todo" ]; then
 		die "No backport candidates found. Have you run git-abc find?"
 	fi
 
-	cat<<EOF >>"$ABC_TODO_PATH"
+	cat<<EOF >>"$todo"
 
 # Select commits for backport
 #
@@ -678,10 +696,11 @@ abc_select()
 #
 # If you remove a line here it's the same as setting it to skip.
 EOF
-	git_editor "$ABC_TODO_PATH"
+	git_editor "$todo"
 
-	mapfile cmds < <(awk '{if (!/^ *#/ && !/^ *$/) print $1" "$2}' "$ABC_TODO_PATH" | tac)
-	rm -f "$ABC_TODO_PATH"
+	mapfile cmds < <(awk '{if (!/^ *#/ && !/^ *$/) print $1" "$2}' "$todo" | tac)
+	rm -f "$todo"
+	rmdir --ignore-fail-on-non-empty "$ABC_TODO_PATH"
 
 	for (( i = 0; i < ${#cmds[*]}; ++i )); do
 		read -r cmd commit <<<"${cmds[i]}"
@@ -757,8 +776,7 @@ get-config)			abc_get_config "$@";;
 	if command -v "git-abc-$cmd" >/dev/null; then
 		exec "git-abc-$cmd" "$@"
 	else
-		echo "$USAGE"
-		echo "Try 'git help abc'"
+		"$0" -h
 		exit 1
 	fi
 	;;
