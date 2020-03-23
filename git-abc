@@ -984,8 +984,8 @@ export)				abc_export;;
 get-config)			abc_get_config "$@";;
 -h|help)			abc_help;;
 *)
-	if command -v git-abc-$cmd >/dev/null; then
-		exec git-abc-$cmd $@
+	if command -v "git-abc-$cmd" >/dev/null; then
+		exec "git-abc-$cmd" "$@"
 	else
 		echo "$USAGE"
 		echo "Try git-abc help"
