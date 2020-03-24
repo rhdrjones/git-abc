@@ -42,69 +42,86 @@ LONG_USAGE="Find and manage backport candidates
 . "$(git --exec-path)/git-sh-setup"
 set_reflog_action abc
 
+die_error() { echo -n "Error: " >&2; die "$1"; }
+
+abc_bool() { git -c abc.not-a-config="$1" config --get --type bool abc.not-a-config 2>/dev/null; }
+
+abc_color="$(abc_bool 'false')"
+[ -t 1 ] && abc_color=$(git config --get-colorbool color.ui 'true')
+
 ABC_DEFAULT_SHOULD_HIGHLIGHT="%s:fix|Fix|FIX|Revert,,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]"
 ABC_DEFAULT_UPSTREAM_LINK="%b:^commit ([0-9a-f]{40})$,,%b:^\(cherry picked from commit ([0-9a-f]{40})\)$"
 ABC_DEFAULT_NAMESPACE="git-abc"
 ABC_DEFAULT_TODO_PATH="$GIT_DIR/git-abc-todo"
+ABC_DEFAULT_HUNT_CHERRIES="$(abc_bool 'false')"
 
-# Set parameters per the user's environment or config
+# Set the parameters that can't / don't need to be validated. Environment overrides git config.
 : "${ABC_SHOULD_HIGHLIGHT:=$(git config --get abc.should-highlight)}"
 : "${ABC_UPSTREAM_LINK:=$(git config --get abc.upstream-link)}"
-: "${ABC_NAMESPACE:=$(git config --get abc.namespace)}"
-: "${ABC_TODO_PATH:=$(git config --get --type path abc.todo-path)}"
-[ -t 1 ] && ABC_COLOR=$(git config --get-colorbool color.ui 'true')
-
-# Set defaults for anything still not set
 : "${ABC_SHOULD_HIGHLIGHT:=$ABC_DEFAULT_SHOULD_HIGHLIGHT}"
 : "${ABC_UPSTREAM_LINK:=$ABC_DEFAULT_UPSTREAM_LINK}"
-: "${ABC_NAMESPACE:=$ABC_DEFAULT_NAMESPACE}"
-: "${ABC_TODO_PATH:=$ABC_DEFAULT_TODO_PATH}"
-: "${ABC_COLOR:=false}"
 
-die_error() { echo -n "Error: " >&2; die "$1"; }
+#
+# Set and validate input parameters or set defaults for anything not set.
+#
 
-get_bool()
+abc_set_parameter()
 {
-	git -c abc.not-a-config="$1" config --get --type bool abc.not-a-config 2>/dev/null
-	return $?
+	local param_env="$1"
+	local defval="$2"
+	local param_git="$3"
+	local git_config="$4"
+	local type="$5"
+
+	unset abc_parameter
+
+	if [ -n "${!param_env}" ]; then
+		abc_parameter="$param_env='${!param_env}'"
+	elif [ -n "$param_git" ] && $git_config >&/dev/null; then
+		eval "$param_env=$($git_config)"
+		abc_parameter="$param_git='${!param_env}'"
+		if [ "$type" = 'bool' ] && [ -z "${!param_env}" ]; then
+			eval "$param_env=$(git config --get --type bool "$param_git")"
+			return
+		fi
+	fi
+
+	if test -v abc_parameter && [ "$type" = 'bool' ]; then
+		if ! abc_bool "${!param_env}" >&/dev/null; then
+			die_error "$abc_parameter is not boolean"
+		else
+			eval "$param_env=$(abc_bool "${!param_env}")"
+		fi
+	elif ! test -v abc_parameter && [ -n "$defval" ]; then
+		eval "$param_env=$defval"
+		abc_parameter="'$defval'"
+	fi
 }
 
-if test -v ABC_HUNT_CHERRIES; then
-	if get_bool "$ABC_HUNT_CHERRIES" >&/dev/null; then
-		ABC_HUNT_CHERRIES=$(get_bool "$ABC_HUNT_CHERRIES")
-	else
-		die_error "ABC_HUNT_CHERRIES=$ABC_HUNT_CHERRIES is not boolean"
-	fi
-elif git config --get --type bool abc.hunt-cherries >&/dev/null; then
-	ABC_HUNT_CHERRIES=$(git config --get --type bool abc.hunt-cherries)
-elif git config --get abc.hunt-cherries >&/dev/null; then
-	die_error "abc.hunt-cherries=$(git config --get abc.hunt-cherries) is not boolean"
-else
-	ABC_HUNT_CHERRIES="false"
-fi
-
+abc_set_parameter 'ABC_NAMESPACE' "$ABC_DEFAULT_NAMESPACE" \
+		  'abc.namespace' 'git config --get abc.namespace'
 if grep -q '/' <<<"$ABC_NAMESPACE"; then
-	die_error "The namespace may not contain '/'"
+	die_error "$abc_parameter may not contain '/'"
 fi
-export GIT_NOTES_REF="refs/notes/$ABC_NAMESPACE"
 
+abc_set_parameter 'ABC_TODO_PATH' "$ABC_DEFAULT_TODO_PATH" \
+		  'abc.todo-path' 'git config --get --type path abc.todo-path'
 if [ -e "$ABC_TODO_PATH" ] && [ ! -d "$ABC_TODO_PATH" ]; then
-	die_error "ABC_TODO_PATH=$ABC_TODO_PATH is not a directory"
+	die_error "$abc_parameter is not a directory"
 fi
 
-abc_highlight()
-{
-	if [ "$ABC_COLOR" = 'true' ]; then
-		echo -n -e "\e[33m$1\e[0m"
-	else
-		echo -n "$1"
-	fi
-}
+abc_set_parameter 'ABC_HUNT_CHERRIES' "$ABC_DEFAULT_HUNT_CHERRIES" \
+		  'abc.hunt-cherries' 'git config --get abc.hunt-cherries' \
+		  'bool'
 
-# All flags are mutually exclusive, so we always overwrite whatever
-# was set before when setting a new one.
+#
+# abc flag functions
+#
+
 abc_set_flag()
 {
+	# All flags are mutually exclusive, so we always overwrite whatever
+	# was set before when setting a new one.
 	local commit=$1 flag=$2
 	git notes add -f -m $flag $commit 2>/dev/null
 }
@@ -115,6 +132,10 @@ abc_is_downstream_only()
 	git notes show $commit 2>/dev/null | grep -q ABC_ONLY_DOWNSTREAM
 	return $?
 }
+
+#
+# abc subcommands
+#
 
 abc_import()
 {
@@ -276,6 +297,15 @@ abc_should_highlight()
 		fi
 	done
 	return 1
+}
+
+abc_highlight()
+{
+	if [ "$abc_color" = 'true' ]; then
+		echo -n -e "\e[33m$1\e[0m"
+	else
+		echo -n "$1"
+	fi
 }
 
 abc_list()
@@ -763,6 +793,11 @@ abc_get_config()
 	printf 'ABC_PATHS=%q\n'			"$ABC_PATHS"
 }
 
+#
+# main
+#
+
+export GIT_NOTES_REF="refs/notes/$ABC_NAMESPACE"
 cmd=$1
 shift
 case "$cmd" in
