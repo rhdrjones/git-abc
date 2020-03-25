@@ -44,6 +44,11 @@ set_reflog_action abc
 
 die_error() { echo -n "Error: " >&2; die "$1"; }
 
+
+#
+# Input parsing and validation
+#
+
 abc_bool() { git -c abc.not-a-config="$1" config --get --type bool abc.not-a-config 2>/dev/null; }
 
 abc_color="$(abc_bool 'false')"
@@ -113,6 +118,82 @@ fi
 abc_set_parameter 'ABC_HUNT_CHERRIES' "$ABC_DEFAULT_HUNT_CHERRIES" \
 		  'abc.hunt-cherries' 'git config --get abc.hunt-cherries' \
 		  'bool'
+
+abc_set_revisions()
+{
+	local upstream=$1 downstream=$2
+	local upstream_parameter downstream_parameter
+	local branch
+
+	if [[ -z $upstream ]]; then
+		abc_set_parameter 'ABC_UPSTREAM' '' \
+				  'abc.upstream' 'git config --get abc.upstream'
+		if [[ -n $ABC_UPSTREAM ]] && ! git rev-parse --verify -q "$ABC_UPSTREAM" >/dev/null; then
+			die_error "$abc_parameter is not a valid revision"
+		elif [[ -n $ABC_UPSTREAM ]]; then
+			upstream_parameter=$abc_parameter
+		fi
+	else
+		ABC_UPSTREAM="$upstream"
+		upstream_parameter="'$upstream'"
+	fi
+
+	if [[ -z $downstream ]]; then
+		abc_set_parameter 'ABC_DOWNSTREAM' 'HEAD' \
+				  'abc.downstream' 'git config --get abc.downstream'
+		if ! git rev-parse --verify -q "$ABC_DOWNSTREAM" >/dev/null; then
+			die_error "$abc_parameter is not a valid revision"
+		fi
+		downstream_parameter=$abc_parameter
+	else
+		ABC_DOWNSTREAM="$downstream"
+		downstream_parameter="'$downstream'"
+	fi
+
+	if [[ -z $ABC_UPSTREAM ]]; then
+		if [[ $(git branch --contains "$ABC_DOWNSTREAM" | wc -l) != 1 ]]; then
+			# No branch or too many branches to guess from. We can't guess.
+			die "Can't guess upstream from $downstream_parameter. Please specify."
+		fi
+		branch="$(git branch --contains "$ABC_DOWNSTREAM" | awk '{print$2}')"
+		ABC_UPSTREAM="${branch}@{upstream}"
+		if ! git rev-parse "$ABC_UPSTREAM" >&/dev/null; then
+			die "No upstream configured for branch '$branch' of $downstream_parameter. Please specify."
+		fi
+	fi
+
+	if [[ "$(git rev-parse "$ABC_UPSTREAM")" == "$(git rev-parse "$ABC_DOWNSTREAM")" ]]; then
+		echo "upstream:$upstream_parameter and downstream:$downstream_parameter match. Nothing to do."
+		exit
+	fi
+}
+
+# Validate and set [<upstream> [<downstream>]] [[--] <path>...]
+abc_get_limits()
+{
+	local upstream downstream
+
+	if [[ -n $1 ]] && [[ $1 != -- ]] && git rev-parse --verify -q "$1" >/dev/null; then
+		upstream=$1
+		shift
+		if [[ -n $1 ]] && [[ $1 != -- ]] && git rev-parse --verify -q "$1" >/dev/null; then
+			downstream=$1
+			shift
+		elif [[ $2 == -- ]]; then
+			die_error "'$1' is not a valid downstream revision"
+		fi
+	elif [[ $2 == -- ]] || [[ $3 == -- ]]; then
+		die_error "'$1' is not a valid upstream revision"
+	fi
+	if [[ $1 == -- ]]; then
+		shift
+	fi
+	if [[ -n $1 ]]; then
+		ABC_PATHS="$*"
+	fi
+
+	abc_set_revisions "$upstream" "$downstream"
+}
 
 #
 # abc flag functions
@@ -212,76 +293,6 @@ abc_reset()
 	fi
 
 	git notes | awk '{print$2}' | git notes remove --stdin 2>/dev/null
-}
-
-abc_get_downstream_revision()
-{
-	if [ "$ABC_DOWNSTREAM" = "" ]; then
-		ABC_DOWNSTREAM=$(git config --get abc.downstream)
-	fi
-
-	if [ "$ABC_DOWNSTREAM" = "" ]; then
-		ABC_DOWNSTREAM=HEAD
-	elif ! git rev-parse --verify -q "$ABC_DOWNSTREAM" >/dev/null; then
-		die_error "'$ABC_DOWNSTREAM' is not a valid downstream revision"
-	fi
-}
-
-abc_get_upstream_revision()
-{
-	local branch=()
-
-	if [ "$ABC_UPSTREAM" = "" ]; then
-		ABC_UPSTREAM=$(git config --get abc.upstream)
-	fi
-
-	if [ "$ABC_UPSTREAM" = "" ]; then
-		abc_get_downstream_revision
-		branch=($(git branch --contains "$ABC_DOWNSTREAM" | sed 's/^\* //'))
-		if [ "${branch[1]}" ]; then
-			# We don't know which branch to use in our guess, so we can't guess.
-			die "Can't guess abc.upstream from abc.downstream $ABC_DOWNSTREAM. Please specify."
-		fi
-		ABC_UPSTREAM="${branch[0]}@{upstream}"
-	fi
-
-	if ! git rev-parse --verify -q "$ABC_UPSTREAM" >/dev/null; then
-		die_error "'$ABC_UPSTREAM' is not a valid upstream revision"
-	fi
-}
-
-abc_get_revisions()
-{
-	abc_get_upstream_revision
-	abc_get_downstream_revision
-
-	if [[ "$(git rev-parse $ABC_UPSTREAM)" == "$(git rev-parse $ABC_DOWNSTREAM)" ]]; then
-		die "upstream and downstream cannot be the same reference"
-	fi
-}
-
-abc_get_limits()
-{
-	if [[ -n $1 ]] && [[ $1 != -- ]] && git rev-parse --verify -q "$1" >/dev/null; then
-		ABC_UPSTREAM=$1
-		shift
-		if [[ -n $1 ]] && [[ $1 != -- ]] && git rev-parse --verify -q "$1" >/dev/null; then
-			ABC_DOWNSTREAM=$1
-			shift
-		elif [[ $2 == -- ]]; then
-			die_error "'$1' is not a valid downstream revision"
-		fi
-	elif [[ $2 == -- ]] || [[ $3 == -- ]]; then
-		die_error "'$1' is not a valid upstream revision"
-	fi
-	if [[ $1 == -- ]]; then
-		shift
-	fi
-	if [[ -n $1 ]]; then
-		ABC_PATHS="$*"
-	fi
-
-	abc_get_revisions
 }
 
 abc_should_highlight()
@@ -586,7 +597,7 @@ abc_set_upstream_range()
 	local commit
 
 	if [ "$range" = "" ]; then
-		abc_get_limits
+		abc_set_revisions
 		range="$ABC_DOWNSTREAM"..
 	fi
 
