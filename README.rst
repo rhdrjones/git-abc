@@ -93,7 +93,7 @@ Workflow
     specified with a double comma (,,) separated list of
     <place-holders>:<regex> pairs.  The default expressions are::
 
-      abc.should-highlight = %s:fix|Fix|FIX|Revert,,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]
+      abc.should-highlight = %s:[Ff]ix|FIX|^Revert ,,%(trailers:key=Cc):^<?[Ss]table\>,,%(trailers:key=Fixes,key=Fix):.
       abc.upstream-link = %b:^\(cherry picked from commit ([0-9a-f]{40})\)$,,%b:^commit ([0-9a-f]{40})$
 
 3.  Determine which paths should be used to filter backport candidates,

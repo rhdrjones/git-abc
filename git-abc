@@ -72,7 +72,7 @@ abc_bool() { git -c abc.not-a-config="$1" config --get --type bool abc.not-a-con
 abc_color="$(abc_bool 'false')"
 [ -t 1 ] && abc_color=$(git config --get-colorbool color.ui 'true')
 
-ABC_DEFAULT_SHOULD_HIGHLIGHT="%s:fix|Fix|FIX|Revert,,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]"
+ABC_DEFAULT_SHOULD_HIGHLIGHT="%s:[Ff]ix|FIX|^Revert ,,%(trailers:key=Cc):^<?[Ss]table\>,,%(trailers:key=Fixes,key=Fix):."
 ABC_DEFAULT_UPSTREAM_LINK="%b:^\(cherry picked from commit ([0-9a-f]{40})\)$,,%b:^commit ([0-9a-f]{40})$"
 ABC_DEFAULT_NAMESPACE="git-abc"
 ABC_DEFAULT_TODO_PATH="$GIT_DIR/git-abc-todo"
