@@ -6,12 +6,12 @@ cmd="git-abc-backport-diff"
 # shellcheck disable=SC2034
 {
 SUBDIRECTORY_OK=true
-USAGE="[-r <range>] [-u <upstream>] [-p] [-s <level>] [-S] [-n] [-- options...]"
+USAGE="[-r <range>] [-u <upstream>] [-p] [-s <level>] [-S] [-n] [-N] [-- options...]"
 LONG_USAGE="OPTIONS:
     -r git range
-       optional; default is '\${ABC_DOWNSTREAM}..'
+       optional; default is '{ABC_DOWNSTREAM}..'
     -u upstream git tag / branch / id
-       optional; default is '\$ABC_UPSTREAM'
+       optional; default is 'ABC_UPSTREAM'
     -p do not pause when viewing diffs
     -s sensitivity level of diff compares
        0:  only show functional code differences
@@ -19,6 +19,7 @@ LONG_USAGE="OPTIONS:
        2:  show all patches, regardless of any differences
     -S summary only (no diff viewing)
     -n do not show summary
+    -N use a temporary git-abc namespace instead of ABC_NAMESPACE
     -h help
 
     You can set each of the default options using git-config:
@@ -134,7 +135,7 @@ summary=$(git config --type bool backport-diff.summary || echo false)
 pause=$(git config --type bool backport-diff.pause || echo true)
 sensitivity=$(git config --type int backport-diff.sensitivity || echo 0)
 
-while getopts ":hr:u:ps:SnN:" opt; do
+while getopts ":hr:u:ps:SnN" opt; do
 	case "$opt" in
 	r)	range=$OPTARG;;
 	u)	upstream=$OPTARG;;
@@ -146,15 +147,13 @@ while getopts ":hr:u:ps:SnN:" opt; do
 		fi;;
 	S)	summary=true;;
 	n)	no_summary=true;;
-	N)	namespace=$OPTARG;;
+	N)	tmp_namespace=true;;
 	h)	"$0" -h;;
 	\?)	echo "Unknown option: -$OPTARG" >&2; usage;;
 	esac
 done
 shift $((OPTIND - 1))
 read -r -a options <<<"$@"
-
-[[ $namespace ]] && export ABC_NAMESPACE=$namespace
 
 if [[ ${range:(-2)} == '^!' ]]; then
 	base=${range:0:(-1)}
@@ -179,7 +178,7 @@ if [[ ! $upstream ]]; then
 	upstream=$ABC_UPSTREAM
 fi
 
-if [[ -z $namespace ]]; then
+if [[ $tmp_namespace == true ]]; then
 	ABC_NAMESPACE="git-abc-$(mktemp -u XXXXXXXX)"
 	export ABC_NAMESPACE
 	trap 'git abc reset -f; exit' EXIT HUP INT TERM
