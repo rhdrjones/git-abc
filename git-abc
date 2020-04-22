@@ -42,8 +42,8 @@ LONG_USAGE="Find and manage backport candidates
 . "$(git --exec-path)/git-sh-setup"
 set_reflog_action abc
 
-ABC_DEFAULT_SHOULD_HIGHLIGHT="%s:fix|Fix|FIX|Revert,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]"
-ABC_DEFAULT_UPSTREAM_LINK="%b:^commit ([0-9a-f]{40})$,%b:^\(cherry picked from commit ([0-9a-f]{40})\)$"
+ABC_DEFAULT_SHOULD_HIGHLIGHT="%s:fix|Fix|FIX|Revert,,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]"
+ABC_DEFAULT_UPSTREAM_LINK="%b:^commit ([0-9a-f]{40})$,,%b:^\(cherry picked from commit ([0-9a-f]{40})\)$"
 ABC_DEFAULT_NAMESPACE="git-abc"
 ABC_DEFAULT_TODO_PATH="$GIT_DIR/git-abc-todo"
 
@@ -265,16 +265,17 @@ abc_get_limits()
 
 abc_should_highlight()
 {
-	local commit=$1
-	local phs re
+	local commit=$1 c="${ABC_SHOULD_HIGHLIGHT},,"
+	local p phs re
 
-	tr ',%' '\n%' <<<"$ABC_SHOULD_HIGHLIGHT" |
-	while IFS=: read -r phs re; do
-		if git log -n1 --pretty="$phs" $commit | egrep -q "$re"; then
-			return 1
+	while [[ "$c" ]]; do
+		p="${c%%,,*}" c="${c#*,,}"
+		phs="${p%%:*}" re="${p#*:}"
+		if git log -n1 --pretty="$phs" "$commit" | grep -E -q "$re"; then
+			return 0
 		fi
 	done
-	test $? -ne 0
+	return 1
 }
 
 abc_list()
@@ -357,30 +358,43 @@ abc_set_upstream()
 	abc_set_flag $upstream "ABC_DOWNSTREAM=$downstream"
 }
 
+abc_extract_commit()
+{
+	# Extract all commit hashes from stdin matching the extended regex
+	local re=$1
+	sed -E 's/'"$re"'/ABC_XXXXXX=\1/;/^ABC_XXXXXX=/!d;s/ABC_XXXXXX=//'
+}
+
 abc_get_upstream_nocheck()
 {
-	local commit=$1
-	local phs re upstream
+	# Outputs the upstream commit and returns 1 if there's already an ABC flag
+	# Outputs the upstream commit and returns 0 if we found it on a search
+	# Outputs nothing and returns 0 if we couldn't find an upstream
+	local commit=$1 c="${ABC_UPSTREAM_LINK},,"
+	local p phs re upstream
+	declare -a matches
 
-	upstream=$(git notes show $commit 2>/dev/null | grep -e ABC_UPSTREAM -e ABC_CHERRYPICK)
+	upstream=$(git notes show "$commit" 2>/dev/null | grep -e ABC_UPSTREAM -e ABC_CHERRYPICK)
 	if [ "$upstream" ]; then
 		echo ${upstream#*=}
 		return 1
 	fi
 
-	tr ',%' '\n%' <<<"$ABC_UPSTREAM_LINK" |
-	while IFS=: read -r phs re; do
-		upstream=$(git log -n1 --pretty="$phs" $commit |
-				sed -E "s/$re/ABC_UPSTREAM=\1/;/^ABC_UPSTREAM=/!d;s/ABC_UPSTREAM=//")
-		if [ "$upstream" ] && git rev-parse --verify -q "$upstream^{commit}" >/dev/null; then
-			if [ ${#upstream} -ne 40 ]; then
-				git log -n1 --pretty=%H $upstream
-			else
-				echo $upstream
+	while [[ "$c" ]]; do
+		p="${c%%,,*}" c="${c#*,,}"
+		phs="${p%%:*}" re="${p#*:}"
+
+		readarray -t matches < <(git log -n1 --pretty="$phs" "$commit" | abc_extract_commit "$re")
+
+		for upstream in "${matches[@]}"; do
+			if git rev-parse --verify -q "${upstream}^{commit}" >/dev/null; then
+				git log -n1 --pretty=%H "$upstream"
+				return 0
 			fi
-			return
-		fi
+		done
 	done
+
+	return 0
 }
 
 abc_get_upstream()

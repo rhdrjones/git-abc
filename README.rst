@@ -85,11 +85,12 @@ Workflow
     Additionally, git-abc determines where to look using git pretty format
     place holders, e.g. %s for subject and %b for body (see git-log(1)
     PRETTY FORMATS).  More than one place to look, or more than one
-    expression per place, may be specified with a comma separated list of
-    <place-holders>:<regex> pairs.  The default expressions are::
+    expression per place, may be specified with a double comma (,,)
+    separated list of <place-holders>:<regex> pairs.  The default
+    expressions are::
 
-      abc.should-highlight = %s:fix|Fix|FIX|Revert,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]
-      abc.upstream-link = %b:^commit ([0-9a-f]{40})$,%b:^\\(cherry picked from commit ([0-9a-f]{40})\\)$
+      abc.should-highlight = %s:fix|Fix|FIX|Revert,,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]
+      abc.upstream-link = %b:^commit ([0-9a-f]{40})$,,%b:^\\(cherry picked from commit ([0-9a-f]{40})\\)$
 
 3.  Determine which paths should be used to filter backport candidates,
     if not all files of the repo need to be considered.  The example

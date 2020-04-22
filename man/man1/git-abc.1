@@ -182,14 +182,14 @@ The ABC_NAMESPACE environment variable may be used to override this config.
 .PP
 abc.should-highlight
 .RS 4
-Comma separated list of <place-holders>:<regex> pairs used to identify interesting commits, e.g. possible fixes.
+Double comma (,,) separated list of <place-holders>:<regex> pairs used to identify interesting commits, e.g. possible fixes.
 <place-holders> are git pretty format place holders (see \fBgit-log\fR(1) PRETTY FORMATS).
 When listing commits, each commit will have each set of place holders checked with its extended regular expression <regex>.
 If there's a match, then the commit is highlighted as an interesting commit.
 The default is:
 .sp
 .nf
-  '%s:fix|Fix|FIX|Revert,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]'
+  '%s:fix|Fix|FIX|Revert,,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]'
 .fi
 .sp
 The ABC_SHOULD_HIGHLIGHT environment variable may be used to override this config.
@@ -197,14 +197,14 @@ The ABC_SHOULD_HIGHLIGHT environment variable may be used to override this confi
 .PP
 abc.upstream-link
 .RS 4
-Comma separated list of <place-holders>:<regex> pairs used to identify upstream links, which are references embedded in downstream commits that point to their corresponding upstream commits.
+Double comma (,,) separated list of <place-holders>:<regex> pairs used to identify upstream links, which are references embedded in downstream commits that point to their corresponding upstream commits.
 <place-holders> are git pretty format place holders (see \fBgit-log\fR(1) PRETTY FORMATS).
 When looking for a corresponding upstream commit, the downstream commit will have each set of place holders checked with its extended regular expression <regex>.
 If there's a match, then the match is used for the upstream link.
 The default is:
 .sp
 .nf
-  '%b:^commit ([0-9a-f]{40})$,%b:^\\(cherry picked from commit ([0-9a-f]{40})\\)$'
+  '%b:^commit ([0-9a-f]{40})$,,%b:^\\(cherry picked from commit ([0-9a-f]{40})\\)$'
 .fi
 .sp
 The ABC_UPSTREAM_LINK environment variable may be used to override this config.
