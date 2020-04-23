@@ -120,6 +120,8 @@ When a downstream range is known to have commits with upstream-links, then this 
 If <downstream-range> is not provided then it defaults to '{downstream}..',  where {downstream} is the same as what would be selected for <downstream> of the 'find' command when it's not provided.
 .sp
 If <upstream-range> is provided then the linkage will only be set if the linked upstream commit is within that range.
+set-upstream-range may take much more time to complete when given an upstream range.
+To speed it up, as well as other git-abc commands, it's recommended to enable core.commitGraph (see git-config(1) and git document technical/commit-graph.txt)
 .sp
 When true, abc.hunt-cherries (see CONFIGURATION:abc.hunt-cherries below) will enable cherry-pick searching, just as it does for the 'find' command.
 However 'find' should be run first with the upstream that should be searched for the potential cherry-picks.

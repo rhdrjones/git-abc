@@ -430,18 +430,16 @@ abc_get_downstream()
 
 abc_commit_in_range()
 {
+	local commit=$1 range=$2
 	declare -a revs
-	local commit=$1
-	local range=$2
 
 	if [ "$range" ]; then
-		revs=($(git rev-parse $range))
-		if ! git merge-base --is-ancestor ${revs[1]:1} $commit ||
-		   ! git merge-base --is-ancestor $commit ${revs[0]}; then
+		readarray -t revs < <(git rev-parse "$range")
+		if git merge-base --is-ancestor "$commit" "${revs[1]:1}" ||
+		   ! git merge-base --is-ancestor "$commit" "${revs[0]}"; then
 			return 1
 		fi
 	fi
-
 	return 0
 }
 

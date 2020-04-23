@@ -31,6 +31,9 @@ LONG_USAGE="OPTIONS:
 
     Additionally, follow the backport-diff options with '-- options...'
     to pass 'options...' to git-range-diff
+
+    Note, performance can be greatly improved by enabling core.commitGraph.
+    (See git-config(1) and git document technical/commit-graph.txt)
 "
 }
 # shellcheck source=/dev/null
@@ -183,15 +186,7 @@ if [[ $tmp_namespace == true ]]; then
 	export ABC_NAMESPACE
 	trap 'git abc reset -f; exit' EXIT HUP INT TERM
 
-# FIXME: Need to improve the performance set-upstream-range with a specified upstream range,
-#	 otherwise it's just not practical to use it. A workaround is to only run this in a
-#	 git repo with the desired upstream available, as set-upstream-range will still complain
-#	 when the upstream commits aren't valid.
-#
-# (Using commitGraph solves the performance problem, but git abc set-upstream-range has a bug
-#  that needs fixing too.)
-#
-#	upstream_range="$(git merge-base "$base" "$upstream")..${upstream}"
+	upstream_range="$(git merge-base "$base" "$upstream")..${upstream}"
 
 	git -c abc.hunt-cherries=off abc set-upstream-range "$range" "$upstream_range" 2>/dev/null
 fi
