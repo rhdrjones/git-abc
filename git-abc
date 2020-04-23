@@ -579,14 +579,13 @@ abc_find()
 		elif ! git notes show $commit 2>/dev/null | grep -q ABC; then
 			# If this commit hasn't already been backported, then it's a candidate. However,
 			# if $parents has a space it means there's more than one, and more than one
-			# parent means a merge. If the merge doesn't have a conflict resolution touching
-			# $ABC_PATHS, then we don't want it.
-			if [ "$ABC_PATHS" ] && [[ $parents =~ ' ' ]]; then
-				files=$(git show --oneline $commit | awk '/^diff --cc / {print$3}' | tr '\n' '|')
-				if [ "$files" = "" ] || ! egrep -q "${files%|}" <<<"$ABC_PATHS"; then
-					abc_set_flag $commit ABC_DONT_WANT
-					continue
-				fi
+			# parent means a merge. Most merges are clean, or the changes that appear with
+			# 'git-show' come directly from one of the parents. Those merges aren't
+			# interesting and so we automatically reject them.
+			if [[ $parents =~ ' ' ]] && ! git show --pretty=%H "$commit" -- $ABC_PATHS |
+						    grep -E -v '^(\+\+\+|---) [ab]\/' | grep -q -E '^(\+\+|--)'; then
+				abc_set_flag "$commit" ABC_DONT_WANT
+				continue
 			fi
 			abc_set_flag $commit ABC_BACKPORT_CANDIDATE
 		fi
