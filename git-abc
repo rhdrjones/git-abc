@@ -43,6 +43,7 @@ LONG_USAGE="Find and manage backport candidates
 set_reflog_action abc
 
 die_error() { echo -n "Error: " >&2; die "$1"; }
+warn() { say "Warning: $1" >&2; }
 
 abc_H() { git log -n1 --pretty=%H "$1"; }
 abc_h() { git log -n1 --pretty=%h "$1"; }
@@ -212,11 +213,40 @@ abc_set_flag()
 	git notes add -f -m $flag $commit 2>/dev/null
 }
 
-abc_is_downstream_only()
+abc_get_flag() { git notes show "$1" 2>/dev/null; }
+abc_is_downstream_only() { git notes show "$1" 2>/dev/null | grep -q ABC_ONLY_DOWNSTREAM; }
+
+abc_flag_get_upstream()
 {
-	local commit=$1
-	git notes show $commit 2>/dev/null | grep -q ABC_ONLY_DOWNSTREAM
-	return $?
+	local commit=$1 upstream
+	upstream=$(git notes show "$commit" 2>/dev/null | grep -e ABC_UPSTREAM -e ABC_CHERRYPICK)
+	if [ "$upstream" ]; then
+		echo "${upstream#*=}"
+		return 0
+	fi
+	return 1
+}
+
+abc_flag_get_downstream()
+{
+	local commit=$1 downstream
+	downstream=$(git notes show "$commit" 2>/dev/null | grep ABC_DOWNSTREAM)
+	if [ "$downstream" ]; then
+		echo "${downstream#*=}"
+		return 0
+	fi
+	return 1
+}
+
+abc_list_flag()
+{
+	local flag=$1 commit note
+
+	git notes | while read -r note commit; do
+		if grep -E -q "$flag" <<<"$(git show "$note")"; then
+			echo "$commit"
+		fi
+	done
 }
 
 #
@@ -385,9 +415,9 @@ abc_set_upstream()
 	downstream=$(abc_H "$downstream")
 	upstream=$(abc_H "$upstream")
 
-	current_upstream=$(git notes show $downstream 2>/dev/null | grep -e ABC_UPSTREAM -e ABC_CHERRYPICK)
+	current_upstream=$(abc_flag_get_upstream "$downstream")
 	if [ "$current_upstream" ]; then
-		git notes remove ${current_upstream#*=} 2>/dev/null
+		warn "Overwriting current upstream for '$downstream' (upstream was '$(abc_h "$current_upstream")')"
 	fi
 
 	if abc_is_cherry $downstream $upstream; then
@@ -414,9 +444,9 @@ abc_get_upstream_nocheck()
 	local p phs re upstream
 	declare -a matches
 
-	upstream=$(git notes show "$commit" 2>/dev/null | grep -e ABC_UPSTREAM -e ABC_CHERRYPICK)
+	upstream=$(abc_flag_get_upstream "$commit")
 	if [ "$upstream" ]; then
-		echo ${upstream#*=}
+		echo "$upstream"
 		return 1
 	fi
 
@@ -473,9 +503,9 @@ abc_get_downstream()
 		die_error "'$commit' is not a valid commit"
 	fi
 
-	downstream=$(git notes show $commit 2>/dev/null | grep -e ABC_DOWNSTREAM)
+	downstream=$(abc_flag_get_downstream "$commit")
 	if [ "$downstream" ]; then
-		git log -n1 --pretty='%h %s' ${downstream#*=}
+		git log -n1 --pretty='%h %s' "$downstream"
 		return
 	fi
 
@@ -525,19 +555,6 @@ abc_set_links()
 	fi
 
 	abc_set_flag $upstream "ABC_DOWNSTREAM=$commit"
-}
-
-abc_list_flag()
-{
-	local flag=$1
-	local commit
-
-	git notes | awk '{print$2}' |
-	while read -r commit; do
-		if egrep -q "$flag" <<<"$(git notes show $commit)"; then
-			echo $commit
-		fi
-	done
 }
 
 # When ABC_HUNT_CHERRIES is true, abc_hunt_cherries() should be called after
@@ -628,7 +645,7 @@ abc_find()
 	while read -r mark commit parents; do
 		if [ "$mark" = '>' ]; then
 			abc_set_links $commit
-		elif ! git notes show $commit 2>/dev/null | grep -q ABC; then
+		elif ! abc_get_flag "$commit" >/dev/null; then
 			# If this commit hasn't already been backported, then it's a candidate. However,
 			# if $parents has a space it means there's more than one, and more than one
 			# parent means a merge. Most merges are clean, or the changes that appear with
@@ -670,7 +687,7 @@ abc_flag()
 			echo "Error: '$commit' is not a valid commit" >&2
 			continue
 		fi
-		curflag=$(git notes show $commit 2>/dev/null)
+		curflag=$(abc_get_flag "$commit")
 		if grep -q ABC_DOWNSTREAM <<<$curflag; then
 			echo "$commit has already been backported. Downstream is ${curflag#*=}." >&2
 			continue
@@ -711,7 +728,7 @@ abc_select()
 
 	git log --notes --pretty='%h %s' --grep=^ABC_ "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
 	while read -r commit subject; do
-		flag=$(git notes show $commit)
+		flag=$(abc_get_flag "$commit")
 		if grep -q ABC_BACKPORT_CANDIDATE <<<$flag ||
 		   ( [ "$show_deferred" ] && grep -q ABC_DEFERRED_CANDIDATE <<<$flag ); then
 			if abc_should_highlight $commit; then
