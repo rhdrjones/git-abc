@@ -56,7 +56,7 @@ When the color.ui configuration setting is true, interesting commits, e.g. possi
 .sp
 Note, 'list' only lists commits previously found with 'find', which means <upstream> and <downstream> should bind the same range, or subrange, of the ones used with 'find' and that the search limiting <path>'s used with 'find' also limit what is listed.
 .sp
-When the 'list-fixes' variant is used, only the commits that are highlighted are output (see 'abc.should-highlight' below)
+When the 'list-fixes' variant is used, only the commits that are highlighted are output (see CONFIGURATION:abc.should-highlight)
 .RE
 .PP
 pick-list [<upstream> [<downstream>]]
@@ -107,9 +107,9 @@ Deferring candidates allows one to reduce the candidate list to a more manageabl
 set-upstream <downstream-commit> <upstream-commit>
 .RS 4
 If a commit shows up in 'list --downstream-only', which does have a corresponding upstream commit, then this command allows the linkage to be manually applied.
-If this command is needed frequently, then, either the backports were done from a different upstream than what was specified with 'find', or there are problems with the upstream-link expression (see CONFIGURATION:abc.upstream-link below) or with the backports not getting upstream links added to their commit messages.
+If this command is needed frequently, then, either the backports were done from a different upstream than what was specified with 'find', or there are problems with the upstream-link expression (see CONFIGURATION:abc.upstream-link) or with the backports not getting upstream links added to their commit messages.
 .sp
-Note, even when the upstream link is missing, wrong, or points to a commit in a different upstream tree, downstream commits with equivalent upstream commits will still be found and linked automatically when abc.hunt-cherries is true (see CONFIGURATION:abc.hunt-cherries below).
+Note, even when the upstream link is missing, wrong, or points to a commit in a different upstream tree, downstream commits with equivalent upstream commits will still be found and linked automatically when abc.hunt-cherries is true (see CONFIGURATION:abc.hunt-cherries).
 See \fBgit-cherry\fR(1) and \fBgit-patch-id\fR(1) for what defines equivalence.
 .RE
 .PP
@@ -123,7 +123,7 @@ If <upstream-range> is provided then the linkage will only be set if the linked 
 set-upstream-range may take much more time to complete when given an upstream range.
 To speed it up, as well as other git-abc commands, it's recommended to enable core.commitGraph (see git-config(1) and git document technical/commit-graph.txt)
 .sp
-When true, abc.hunt-cherries (see CONFIGURATION:abc.hunt-cherries below) will enable cherry-pick searching, just as it does for the 'find' command.
+When true, abc.hunt-cherries (see CONFIGURATION:abc.hunt-cherries) will enable cherry-pick searching, just as it does for the 'find' command.
 However 'find' should be run first with the upstream that should be searched for the potential cherry-picks.
 .RE
 .PP
@@ -135,6 +135,8 @@ Output the corresponding upstream commit for <downstream-commit>.
 get-downstream <upstream-commit>
 .RS 4
 Output the corresponding downstream commit for <upstream-commit>.
+If the downstream commit is not already known by git-abc then 'get-downstream' will search for it by checking all the commits on the downstream branch for an upstream link containing the given upstream commit.
+If the downstream commit is found, then the linkage is stored within the current namespace in order to speed up the next lookup.
 .RE
 .PP
 reset [--force]

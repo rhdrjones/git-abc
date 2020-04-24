@@ -50,6 +50,7 @@ abc_h() { git log -n1 --pretty=%h "$1"; }
 abc_rev_verify() { git rev-parse --verify -q "$1" >/dev/null; }
 abc_is_ancestor() { git merge-base --is-ancestor "$1" "$2"; } # is "$1" an ancestor of "$2"
 abc_patch_id() { local commit=$1 id; read -r id commit <<<"$(git show "$1" | git patch-id --stable)"; echo "$id"; }
+abc_is_cherry() { test "$(abc_patch_id "$1")" = "$(abc_patch_id "$2")"; }
 
 #
 # Input parsing and validation
@@ -249,6 +250,19 @@ abc_list_flag()
 	done
 }
 
+abc_link()
+{
+	local downstream=$1 upstream=$2
+
+	if abc_is_cherry "$downstream" "$upstream"; then
+		abc_set_flag "$downstream" "ABC_CHERRYPICK=$upstream"
+	else
+		abc_set_flag "$downstream" "ABC_UPSTREAM=$upstream"
+	fi
+
+	abc_set_flag "$upstream" "ABC_DOWNSTREAM=$downstream"
+}
+
 #
 # abc subcommands
 #
@@ -381,16 +395,6 @@ abc_list()
 	done
 }
 
-abc_is_cherry()
-{
-	local commit_a=$1 commit_b=$2
-	local id_a id_b
-
-	id_a=$(abc_patch_id "$commit_a")
-	id_b=$(abc_patch_id "$commit_b")
-	test "$id_a" = "$id_b"
-}
-
 abc_set_upstream()
 {
 	local downstream=$1 upstream=$2 current_upstream
@@ -412,12 +416,7 @@ abc_set_upstream()
 		warn "Overwriting current upstream for '$downstream' (upstream was '$(abc_h "$current_upstream")')"
 	fi
 
-	if abc_is_cherry "$downstream" "$upstream"; then
-		abc_set_flag "$downstream" "ABC_CHERRYPICK=$upstream"
-	else
-		abc_set_flag "$downstream" "ABC_UPSTREAM=$upstream"
-	fi
-	abc_set_flag "$upstream" "ABC_DOWNSTREAM=$downstream"
+	abc_link "$downstream" "$upstream"
 }
 
 abc_extract_commit()
@@ -475,12 +474,37 @@ abc_get_upstream()
 	fi
 
 	upstream=$(abc_get_upstream_nocheck "$commit")
-	if [ "$upstream" ]; then
-		git log -n1 --pretty='%h %s' "$upstream"
-		return
+	if [ -z "$upstream" ]; then
+		die "No upstream for '$commit' found"
 	fi
 
-	die "No upstream for '$commit' found"
+	git log -n1 --pretty='%h %s' "$upstream"
+}
+
+abc_get_downstream_nocheck()
+{
+	local commit=$1 upstream downstream
+
+	if downstream=$(abc_flag_get_downstream "$commit"); then
+		echo "$downstream"
+		return 0
+	fi
+
+	abc_set_revisions
+	commit=$(abc_H "$commit")
+
+	while read -r downstream; do
+		if abc_is_downstream_only "$downstream"; then
+			continue
+		fi
+		if upstream=$(abc_get_upstream_nocheck "$downstream") && [ "$upstream" ]; then
+			abc_link "$downstream" "$upstream"
+			echo "$downstream"
+			return 0
+		fi
+	done < <(git log --pretty=%H --grep "${commit:0:8}" "$ABC_UPSTREAM..$ABC_DOWNSTREAM")
+
+	return 1
 }
 
 abc_get_downstream()
@@ -495,13 +519,11 @@ abc_get_downstream()
 		die_error "'$commit' is not a valid commit"
 	fi
 
-	downstream=$(abc_flag_get_downstream "$commit")
-	if [ "$downstream" ]; then
-		git log -n1 --pretty='%h %s' "$downstream"
-		return
+	if ! downstream=$(abc_get_downstream_nocheck "$commit"); then
+		die "No downstream for '$commit' found"
 	fi
 
-	die "No downstream for '$commit' found"
+	git log -n1 --pretty='%h %s' "$downstream"
 }
 
 abc_commit_in_range()
@@ -521,12 +543,9 @@ abc_commit_in_range()
 
 abc_set_links()
 {
-	local commit=$1
-	local upstream_range=$2
-	local upstream
+	local commit=$1 upstream_range=$2 upstream
 
-	upstream=$(abc_get_upstream_nocheck "$commit")
-	if [ $? -eq 1 ]; then
+	if ! upstream=$(abc_get_upstream_nocheck "$commit"); then
 		# Move along... we've seen this commit before.
 		return
 	fi
@@ -540,13 +559,7 @@ abc_set_links()
 		return
 	fi
 
-	if abc_is_cherry "$commit" "$upstream"; then
-		abc_set_flag "$commit" "ABC_CHERRYPICK=$upstream"
-	else
-		abc_set_flag "$commit" "ABC_UPSTREAM=$upstream"
-	fi
-
-	abc_set_flag "$upstream" "ABC_DOWNSTREAM=$commit"
+	abc_link "$commit" "$upstream"
 }
 
 # When ABC_HUNT_CHERRIES is true, abc_hunt_cherries() should be called after
