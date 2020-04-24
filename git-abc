@@ -44,6 +44,11 @@ set_reflog_action abc
 
 die_error() { echo -n "Error: " >&2; die "$1"; }
 
+abc_H() { git log -n1 --pretty=%H "$1"; }
+abc_h() { git log -n1 --pretty=%h "$1"; }
+abc_rev_verify() { git rev-parse --verify -q "$1" >/dev/null; }
+abc_is_ancestor() { git merge-base --is-ancestor "$1" "$2"; } # is "$1" an ancestor of "$2"
+abc_patch_id() { local commit=$1 id; read -r id commit <<<"$(git show "$1" | git patch-id --stable)"; echo "$id"; }
 
 #
 # Input parsing and validation
@@ -128,7 +133,7 @@ abc_set_revisions()
 	if [[ -z $upstream ]]; then
 		abc_set_parameter 'ABC_UPSTREAM' '' \
 				  'abc.upstream' 'git config --get abc.upstream'
-		if [[ -n $ABC_UPSTREAM ]] && ! git rev-parse --verify -q "$ABC_UPSTREAM" >/dev/null; then
+		if [[ -n $ABC_UPSTREAM ]] && ! abc_rev_verify "$ABC_UPSTREAM"; then
 			die_error "$abc_parameter is not a valid revision"
 		elif [[ -n $ABC_UPSTREAM ]]; then
 			upstream_parameter=$abc_parameter
@@ -141,7 +146,7 @@ abc_set_revisions()
 	if [[ -z $downstream ]]; then
 		abc_set_parameter 'ABC_DOWNSTREAM' 'HEAD' \
 				  'abc.downstream' 'git config --get abc.downstream'
-		if ! git rev-parse --verify -q "$ABC_DOWNSTREAM" >/dev/null; then
+		if ! abc_rev_verify "$ABC_DOWNSTREAM"; then
 			die_error "$abc_parameter is not a valid revision"
 		fi
 		downstream_parameter=$abc_parameter
@@ -173,10 +178,10 @@ abc_get_limits()
 {
 	local upstream downstream
 
-	if [[ -n $1 ]] && [[ $1 != -- ]] && git rev-parse --verify -q "$1" >/dev/null; then
+	if [[ -n $1 ]] && [[ $1 != -- ]] && abc_rev_verify "$1"; then
 		upstream=$1
 		shift
-		if [[ -n $1 ]] && [[ $1 != -- ]] && git rev-parse --verify -q "$1" >/dev/null; then
+		if [[ -n $1 ]] && [[ $1 != -- ]] && abc_rev_verify "$1"; then
 			downstream=$1
 			shift
 		elif [[ $2 == -- ]]; then
@@ -354,19 +359,13 @@ abc_list()
 	done
 }
 
-abc_get_patch_id()
-{
-	local commit=$1
-	git show $commit | git patch-id --stable | awk '{print$1}'
-}
-
 abc_is_cherry()
 {
 	local commit_a=$1 commit_b=$2
 	local id_a id_b
 
-	id_a=$(abc_get_patch_id $commit_a)
-	id_b=$(abc_get_patch_id $commit_b)
+	id_a=$(abc_patch_id "$commit_a")
+	id_b=$(abc_patch_id "$commit_b")
 	test "$id_a" = "$id_b"
 }
 
@@ -377,14 +376,14 @@ abc_set_upstream()
 	if [ "$downstream" = "" ] || [ "$upstream" = "" ]; then
 		die_error "set-upstream requires two parameters: <downstream-commit> <upstream-commit>"
 	fi
-	if ! git rev-parse --verify -q "$downstream^{commit}" >/dev/null; then
+	if ! abc_rev_verify "$downstream^{commit}"; then
 		die_error "'$downstream' is not a valid commit"
 	fi
-	if ! git rev-parse --verify -q "$upstream^{commit}" >/dev/null; then
+	if ! abc_rev_verify "$upstream^{commit}"; then
 		die_error "'$upstream' is not a valid commit"
 	fi
-	downstream=$(git log -n1 --pretty=%H $downstream)
-	upstream=$(git log -n1 --pretty=%H $upstream)
+	downstream=$(abc_H "$downstream")
+	upstream=$(abc_H "$upstream")
 
 	current_upstream=$(git notes show $downstream 2>/dev/null | grep -e ABC_UPSTREAM -e ABC_CHERRYPICK)
 	if [ "$current_upstream" ]; then
@@ -428,8 +427,8 @@ abc_get_upstream_nocheck()
 		readarray -t matches < <(git log -n1 --pretty="$phs" "$commit" | abc_extract_commit "$re")
 
 		for upstream in "${matches[@]}"; do
-			if git rev-parse --verify -q "${upstream}^{commit}" >/dev/null; then
-				git log -n1 --pretty=%H "$upstream"
+			if abc_rev_verify "${upstream}^{commit}"; then
+				abc_H "$upstream"
 				return 0
 			fi
 		done
@@ -446,7 +445,7 @@ abc_get_upstream()
 	if [ "$commit" = "" ]; then
 		die_error "get-upstream requires a parameter: <downstream-commit>"
 	fi
-	if ! git rev-parse --verify -q "$commit^{commit}" >/dev/null; then
+	if ! abc_rev_verify "$commit^{commit}"; then
 		die_error "'$commit' is not a valid commit"
 	fi
 	if abc_is_downstream_only $commit; then
@@ -470,7 +469,7 @@ abc_get_downstream()
 	if [ "$commit" = "" ]; then
 		die_error "get-downstream requires a parameter: <upstream-commit>"
 	fi
-	if ! git rev-parse --verify -q "$commit^{commit}" >/dev/null; then
+	if ! abc_rev_verify "$commit^{commit}"; then
 		die_error "'$commit' is not a valid commit"
 	fi
 
@@ -490,8 +489,8 @@ abc_commit_in_range()
 
 	if [ "$range" ]; then
 		readarray -t revs < <(git rev-parse "$range")
-		if git merge-base --is-ancestor "$commit" "${revs[1]:1}" ||
-		   ! git merge-base --is-ancestor "$commit" "${revs[0]}"; then
+		if abc_is_ancestor "$commit" "${revs[1]:1}" ||
+		   ! abc_is_ancestor "$commit" "${revs[0]}"; then
 			return 1
 		fi
 	fi
@@ -562,7 +561,7 @@ abc_hunt_cherries()
 	for commit in $(abc_list_flag ABC_ONLY_DOWNSTREAM_NEW); do
 		abc_set_flag $commit ABC_ONLY_DOWNSTREAM
 		new_downstream_only+=($commit)
-		downstream_patchid[$commit]=$(abc_get_patch_id $commit)
+		downstream_patchid[$commit]=$(abc_patch_id "$commit")
 	done
 	if (( ${#new_downstream_only[*]} == 0 )); then
 		return
@@ -578,7 +577,7 @@ abc_hunt_cherries()
 		for upstream in ${possible_cherries[*]}; do
 			uid=${upstream_patchid[$upstream]}
 			if [ "$uid" = "" ]; then
-				upstream_patchid[$upstream]=$(abc_get_patch_id $upstream)
+				upstream_patchid[$upstream]=$(abc_patch_id "$upstream")
 				uid=${upstream_patchid[$upstream]}
 			fi
 			if [ "$did" = "$uid" ] && abc_commit_in_range $upstream $upstream_range; then
@@ -604,7 +603,7 @@ abc_set_upstream_range()
 	git log --reverse --pretty=%H "$range" | while read -r commit; do
 		abc_set_links $commit $upstream_range
 		if [ "$ABC_HUNT_CHERRIES" != "true" ] && abc_is_downstream_only $commit; then
-			echo "'$(git log -n1 --pretty=%h $commit)' is downstream-only" >&2
+			echo "'$(abc_h "$commit")' is downstream-only" >&2
 		fi
 	done
 
@@ -612,7 +611,7 @@ abc_set_upstream_range()
 		abc_hunt_cherries $upstream_range
 		git log --reverse --pretty=%H "$range" | while read -r commit; do
 			if abc_is_downstream_only $commit; then
-				echo "'$(git log -n1 --pretty=%h $commit)' is downstream-only" >&2
+				echo "'$(abc_h "$commit")' is downstream-only" >&2
 			fi
 		done
 	fi
@@ -667,7 +666,7 @@ abc_flag()
 	fi
 
 	for commit in "$@"; do
-		if ! git rev-parse --verify -q "$commit^{commit}" >/dev/null; then
+		if ! abc_rev_verify "$commit^{commit}"; then
 			echo "Error: '$commit' is not a valid commit" >&2
 			continue
 		fi
