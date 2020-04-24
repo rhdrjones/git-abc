@@ -210,7 +210,7 @@ abc_set_flag()
 	# All flags are mutually exclusive, so we always overwrite whatever
 	# was set before when setting a new one.
 	local commit=$1 flag=$2
-	git notes add -f -m $flag $commit 2>/dev/null
+	git notes add -f -m "$flag" "$commit" 2>/dev/null
 }
 
 abc_get_flag() { git notes show "$1" 2>/dev/null; }
@@ -268,42 +268,34 @@ abc_import()
 
 	while read -r -u $fd flag commit link; do
 		case "$flag" in
-		BP) abc_set_flag $commit ABC_BACKPORT_PENDING;;
-		BC) abc_set_flag $commit ABC_BACKPORT_CANDIDATE;;
-		DC) abc_set_flag $commit ABC_DEFERRED_CANDIDATE;;
-		DW) abc_set_flag $commit ABC_DONT_WANT;;
-		DO) abc_set_flag $commit ABC_ONLY_DOWNSTREAM;;
-		US) abc_set_flag $commit "ABC_DOWNSTREAM=$link";;
-		DS) abc_set_flag $commit "ABC_UPSTREAM=$link";;
-		CP) abc_set_flag $commit "ABC_CHERRYPICK=$link";;
+		BP) abc_set_flag "$commit" ABC_BACKPORT_PENDING;;
+		BC) abc_set_flag "$commit" ABC_BACKPORT_CANDIDATE;;
+		DC) abc_set_flag "$commit" ABC_DEFERRED_CANDIDATE;;
+		DW) abc_set_flag "$commit" ABC_DONT_WANT;;
+		DO) abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM;;
+		US) abc_set_flag "$commit" "ABC_DOWNSTREAM=$link";;
+		DS) abc_set_flag "$commit" "ABC_UPSTREAM=$link";;
+		CP) abc_set_flag "$commit" "ABC_CHERRYPICK=$link";;
 		esac
 	done
 }
 
 abc_export()
 {
-	local commit flag
+	local note commit flag
 
-	git notes | awk '{print$2}' |
-	while read -r commit; do
-		flag=$(git notes show $commit)
-		if grep -q ABC_BACKPORT_PENDING <<<$flag; then
-			echo "BP $commit"
-		elif grep -q ABC_BACKPORT_CANDIDATE <<<$flag; then
-			echo "BC $commit"
-		elif grep -q ABC_DEFERRED_CANDIDATE <<<$flag; then
-			echo "DC $commit"
-		elif grep -q ABC_DONT_WANT <<<$flag; then
-			echo "DW $commit"
-		elif grep -q ABC_ONLY_DOWNSTREAM <<<$flag; then
-			echo "DO $commit"
-		elif grep -q ABC_DOWNSTREAM <<<$flag; then
-			echo "US $commit ${flag#*=}"
-		elif grep -q ABC_UPSTREAM <<<$flag; then
-			echo "DS $commit ${flag#*=}"
-		elif grep -q ABC_CHERRYPICK <<<$flag; then
-			echo "CP $commit ${flag#*=}"
-		fi
+	git notes | while read -r note commit; do
+		flag=$(git show "$note")
+		case "$flag" in
+		ABC_BACKPORT_PENDING)	echo "BP $commit";;
+		ABC_BACKPORT_CANDIDATE)	echo "BC $commit";;
+		ABC_DEFERRED_CANDIDATE)	echo "DC $commit";;
+		ABC_DONT_WANT)		echo "DW $commit";;
+		ABC_ONLY_DOWNSTREAM)	echo "DO $commit";;
+		ABC_DOWNSTREAM=*)	echo "US $commit ${flag#*=}";;
+		ABC_UPSTREAM=*)		echo "DS $commit ${flag#*=}";;
+		ABC_CHERRYPICK=*)	echo "CP $commit ${flag#*=}";;
+		esac
 	done
 }
 
@@ -381,8 +373,8 @@ abc_list()
 
 	git log --notes --pretty='%h %s' --grep=^$flag "$range" |
 	while read -r commit subject; do
-		if abc_should_highlight $commit; then
-			echo "$(abc_highlight $commit) $subject"
+		if abc_should_highlight "$commit"; then
+			echo "$(abc_highlight "$commit") $subject"
 		elif [ "$ABC_ONLY_FIXES" != 'y' ]; then
 			echo "$commit $subject"
 		fi
@@ -420,12 +412,12 @@ abc_set_upstream()
 		warn "Overwriting current upstream for '$downstream' (upstream was '$(abc_h "$current_upstream")')"
 	fi
 
-	if abc_is_cherry $downstream $upstream; then
-		abc_set_flag $downstream "ABC_CHERRYPICK=$upstream"
+	if abc_is_cherry "$downstream" "$upstream"; then
+		abc_set_flag "$downstream" "ABC_CHERRYPICK=$upstream"
 	else
-		abc_set_flag $downstream "ABC_UPSTREAM=$upstream"
+		abc_set_flag "$downstream" "ABC_UPSTREAM=$upstream"
 	fi
-	abc_set_flag $upstream "ABC_DOWNSTREAM=$downstream"
+	abc_set_flag "$upstream" "ABC_DOWNSTREAM=$downstream"
 }
 
 abc_extract_commit()
@@ -478,13 +470,13 @@ abc_get_upstream()
 	if ! abc_rev_verify "$commit^{commit}"; then
 		die_error "'$commit' is not a valid commit"
 	fi
-	if abc_is_downstream_only $commit; then
+	if abc_is_downstream_only "$commit"; then
 		die "'$commit' is downstream-only"
 	fi
 
-	upstream=$(abc_get_upstream_nocheck $commit)
+	upstream=$(abc_get_upstream_nocheck "$commit")
 	if [ "$upstream" ]; then
-		git log -n1 --pretty='%h %s' $upstream
+		git log -n1 --pretty='%h %s' "$upstream"
 		return
 	fi
 
@@ -533,28 +525,28 @@ abc_set_links()
 	local upstream_range=$2
 	local upstream
 
-	upstream=$(abc_get_upstream_nocheck $commit)
+	upstream=$(abc_get_upstream_nocheck "$commit")
 	if [ $? -eq 1 ]; then
 		# Move along... we've seen this commit before.
 		return
 	fi
 
-	if [ "$upstream" = "" ] || ! abc_commit_in_range $upstream $upstream_range; then
+	if [ "$upstream" = "" ] || ! abc_commit_in_range "$upstream" "$upstream_range"; then
 		if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
-			abc_set_flag $commit ABC_ONLY_DOWNSTREAM_NEW
+			abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM_NEW
 		else
-			abc_set_flag $commit ABC_ONLY_DOWNSTREAM
+			abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM
 		fi
 		return
 	fi
 
-	if abc_is_cherry $commit $upstream; then
-		abc_set_flag $commit "ABC_CHERRYPICK=$upstream"
+	if abc_is_cherry "$commit" "$upstream"; then
+		abc_set_flag "$commit" "ABC_CHERRYPICK=$upstream"
 	else
-		abc_set_flag $commit "ABC_UPSTREAM=$upstream"
+		abc_set_flag "$commit" "ABC_UPSTREAM=$upstream"
 	fi
 
-	abc_set_flag $upstream "ABC_DOWNSTREAM=$commit"
+	abc_set_flag "$upstream" "ABC_DOWNSTREAM=$commit"
 }
 
 # When ABC_HUNT_CHERRIES is true, abc_hunt_cherries() should be called after
@@ -576,15 +568,15 @@ abc_hunt_cherries()
 	fi
 
 	for commit in $(abc_list_flag ABC_ONLY_DOWNSTREAM_NEW); do
-		abc_set_flag $commit ABC_ONLY_DOWNSTREAM
-		new_downstream_only+=($commit)
+		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM
+		new_downstream_only+=("$commit")
 		downstream_patchid[$commit]=$(abc_patch_id "$commit")
 	done
 	if (( ${#new_downstream_only[*]} == 0 )); then
 		return
 	fi
 
-	possible_cherries=($(abc_list_flag 'ABC_BACKPORT_CANDIDATE|ABC_DEFERRED_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT'))
+	readarray -t possible_cherries < <(abc_list_flag 'ABC_BACKPORT_CANDIDATE|ABC_DEFERRED_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT')
 	if (( ${#possible_cherries[*]} == 0 )); then
 		return
 	fi
@@ -597,9 +589,9 @@ abc_hunt_cherries()
 				upstream_patchid[$upstream]=$(abc_patch_id "$upstream")
 				uid=${upstream_patchid[$upstream]}
 			fi
-			if [ "$did" = "$uid" ] && abc_commit_in_range $upstream $upstream_range; then
-				abc_set_flag $commit "ABC_CHERRYPICK=$upstream"
-				abc_set_flag $upstream "ABC_DOWNSTREAM=$commit"
+			if [ "$did" = "$uid" ] && abc_commit_in_range "$upstream" "$upstream_range"; then
+				abc_set_flag "$commit" "ABC_CHERRYPICK=$upstream"
+				abc_set_flag "$upstream" "ABC_DOWNSTREAM=$commit"
 				break
 			fi
 		done
@@ -618,16 +610,16 @@ abc_set_upstream_range()
 	fi
 
 	git log --reverse --pretty=%H "$range" | while read -r commit; do
-		abc_set_links $commit $upstream_range
-		if [ "$ABC_HUNT_CHERRIES" != "true" ] && abc_is_downstream_only $commit; then
+		abc_set_links "$commit" "$upstream_range"
+		if [ "$ABC_HUNT_CHERRIES" != "true" ] && abc_is_downstream_only "$commit"; then
 			echo "'$(abc_h "$commit")' is downstream-only" >&2
 		fi
 	done
 
 	if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
-		abc_hunt_cherries $upstream_range
+		abc_hunt_cherries "$upstream_range"
 		git log --reverse --pretty=%H "$range" | while read -r commit; do
-			if abc_is_downstream_only $commit; then
+			if abc_is_downstream_only "$commit"; then
 				echo "'$(abc_h "$commit")' is downstream-only" >&2
 			fi
 		done
@@ -644,7 +636,7 @@ abc_find()
 			"$ABC_UPSTREAM"..."$ABC_DOWNSTREAM" -- $ABC_PATHS |
 	while read -r mark commit parents; do
 		if [ "$mark" = '>' ]; then
-			abc_set_links $commit
+			abc_set_links "$commit"
 		elif ! abc_get_flag "$commit" >/dev/null; then
 			# If this commit hasn't already been backported, then it's a candidate. However,
 			# if $parents has a space it means there's more than one, and more than one
@@ -656,7 +648,7 @@ abc_find()
 				abc_set_flag "$commit" ABC_DONT_WANT
 				continue
 			fi
-			abc_set_flag $commit ABC_BACKPORT_CANDIDATE
+			abc_set_flag "$commit" ABC_BACKPORT_CANDIDATE
 		fi
 	done
 
@@ -688,14 +680,14 @@ abc_flag()
 			continue
 		fi
 		curflag=$(abc_get_flag "$commit")
-		if grep -q ABC_DOWNSTREAM <<<$curflag; then
+		if grep -q ABC_DOWNSTREAM <<<"$curflag"; then
 			echo "$commit has already been backported. Downstream is ${curflag#*=}." >&2
 			continue
-		elif grep -q -e ABC_ONLY_DOWNSTREAM -e ABC_UPSTREAM -e ABC_CHERRYPICK <<<$curflag; then
+		elif grep -q -e ABC_ONLY_DOWNSTREAM -e ABC_UPSTREAM -e ABC_CHERRYPICK <<<"$curflag"; then
 			echo "$commit is a downstream commit, can't backport." >&2
 			continue
 		fi
-		abc_set_flag $commit $flag
+		abc_set_flag "$commit" "$flag"
 	done
 }
 
@@ -729,16 +721,16 @@ abc_select()
 	git log --notes --pretty='%h %s' --grep=^ABC_ "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
 	while read -r commit subject; do
 		flag=$(abc_get_flag "$commit")
-		if grep -q ABC_BACKPORT_CANDIDATE <<<$flag ||
-		   ( [ "$show_deferred" ] && grep -q ABC_DEFERRED_CANDIDATE <<<$flag ); then
-			if abc_should_highlight $commit; then
+		if grep -q ABC_BACKPORT_CANDIDATE <<<"$flag" ||
+		   ( [ "$show_deferred" ] && grep -q ABC_DEFERRED_CANDIDATE <<<"$flag" ); then
+			if abc_should_highlight "$commit"; then
 				echo "VIEW $commit $subject" >> "$todo"
 			else
 				echo "view $commit $subject" >> "$todo"
 			fi
-		elif [ "$show_dropped" ] && grep -q ABC_DONT_WANT <<<$flag; then
+		elif [ "$show_dropped" ] && grep -q ABC_DONT_WANT <<<"$flag"; then
 			echo "drop $commit $subject" >> "$todo"
-		elif [ "$show_picked" ] && grep -q ABC_BACKPORT_PENDING <<<$flag; then
+		elif [ "$show_picked" ] && grep -q ABC_BACKPORT_PENDING <<<"$flag"; then
 			echo "pick $commit $subject" >> "$todo"
 		fi
 	done
@@ -773,26 +765,26 @@ EOF
 	for (( i = 0; i < ${#cmds[*]}; ++i )); do
 		read -r cmd commit <<<"${cmds[i]}"
 		case "$cmd" in
-		P|p|Pick|pick|PICK) abc_flag --pending $commit;;
-		D|d|Drop|drop|DROP) abc_flag --rejected $commit;;
-		C|c|Cand|cand|CAND) abc_flag --candidate $commit;;
-		H|h|Hide|hide|HIDE) abc_flag --deferred $commit;;
+		P|p|Pick|pick|PICK) abc_flag --pending "$commit";;
+		D|d|Drop|drop|DROP) abc_flag --rejected "$commit";;
+		C|c|Cand|cand|CAND) abc_flag --candidate "$commit";;
+		H|h|Hide|hide|HIDE) abc_flag --deferred "$commit";;
 		V|v|View|view|VIEW)
-			git show $commit
+			git show "$commit"
 			read -r -p "Backport (Pick/Drop/Cand/Hide/Skip)? " cmd
 			while true; do
 				case "$cmd" in
 				P|p|Pick|pick)
-					abc_flag --pending $commit
+					abc_flag --pending "$commit"
 					break;;
 				D|d|Drop|drop)
-					abc_flag --rejected $commit
+					abc_flag --rejected "$commit"
 					break;;
 				C|c|Cand|cand)
-					abc_flag --candidate $commit
+					abc_flag --candidate "$commit"
 					break;;
 				H|h|Hide|hide)
-					abc_flag --deferred $commit
+					abc_flag --deferred "$commit"
 					break;;
 				S|s|Skip|skip)
 					break;;
