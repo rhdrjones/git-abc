@@ -45,10 +45,13 @@ set_reflog_action abc
 die_error() { echo -n "Error: " >&2; die "$1"; }
 warn() { say "Warning: $1" >&2; }
 
+unset abc_merge_base
+
 abc_H() { git log -n1 --pretty=%H "$1"; }
 abc_h() { git log -n1 --pretty=%h "$1"; }
 abc_rev_verify() { git rev-parse --verify -q "$1" >/dev/null; }
 abc_is_ancestor() { git merge-base --is-ancestor "$1" "$2"; } # is "$1" an ancestor of "$2"
+abc_commit_in_range() { ! abc_is_ancestor "$1" "$2" && abc_is_ancestor "$1" "$3"; }
 abc_patch_id() { local commit=$1 id; read -r id commit <<<"$(git show "$1" | git patch-id --stable)"; echo "$id"; }
 abc_is_cherry() { test "$(abc_patch_id "$1")" = "$(abc_patch_id "$2")"; }
 
@@ -66,6 +69,7 @@ ABC_DEFAULT_UPSTREAM_LINK="%b:^commit ([0-9a-f]{40})$,,%b:^\(cherry picked from 
 ABC_DEFAULT_NAMESPACE="git-abc"
 ABC_DEFAULT_TODO_PATH="$GIT_DIR/git-abc-todo"
 ABC_DEFAULT_HUNT_CHERRIES="$(abc_bool 'false')"
+ABC_DEFAULT_RANGE_CHECKS="$(abc_bool 'true')"
 
 # Set the parameters that can't / don't need to be validated. Environment overrides git config.
 : "${ABC_SHOULD_HIGHLIGHT:=$(git config --get abc.should-highlight)}"
@@ -126,6 +130,10 @@ abc_set_parameter 'ABC_HUNT_CHERRIES' "$ABC_DEFAULT_HUNT_CHERRIES" \
 		  'abc.hunt-cherries' 'git config --get abc.hunt-cherries' \
 		  'bool'
 
+abc_set_parameter 'ABC_RANGE_CHECKS' "$ABC_DEFAULT_RANGE_CHECKS" \
+		  'abc.range-checks' 'git config --get abc.range-checks' \
+		  'bool'
+
 abc_set_revisions()
 {
 	local upstream=$1 downstream=$2
@@ -172,6 +180,12 @@ abc_set_revisions()
 	if [[ "$(git rev-parse "$ABC_UPSTREAM")" == "$(git rev-parse "$ABC_DOWNSTREAM")" ]]; then
 		echo "upstream:$upstream_parameter and downstream:$downstream_parameter match. Nothing to do."
 		exit
+	fi
+
+	if [[ "$(git config --get --type bool core.commitGraph)" == true ]]; then
+		abc_merge_base=$(abc_h "$(git merge-base "$ABC_UPSTREAM" "$ABC_DOWNSTREAM")")
+	else
+		warn "core.commitGraph is not enabled. Disabling commit range checks."
 	fi
 }
 
@@ -237,17 +251,6 @@ abc_flag_get_downstream()
 		return 0
 	fi
 	return 1
-}
-
-abc_list_flag()
-{
-	local flag=$1 commit note
-
-	git notes | while read -r note commit; do
-		if grep -E -q "$flag" <<<"$(git show "$note")"; then
-			echo "$commit"
-		fi
-	done
 }
 
 abc_link()
@@ -395,6 +398,40 @@ abc_list()
 	done
 }
 
+abc_commit_range_check()
+{
+	local die stream commit range base tip msg
+
+	if [[ $1 == --die ]]; then
+		die=1; shift
+	fi
+
+	stream=$1 commit=$2 range=$3
+
+	if [[ $range ]]; then
+		base="${range%%..*}"
+		tip="${range#*..}"
+	elif [[ $ABC_RANGE_CHECKS == 'true' && $abc_merge_base ]]; then
+		base=$abc_merge_base
+		if [[ $stream == upstream ]]; then
+			tip=$ABC_UPSTREAM
+		else
+			tip=$ABC_DOWNSTREAM
+		fi
+	else
+		return
+	fi
+
+	if ! abc_commit_in_range "$commit" "$base" "$tip"; then
+		msg="'$(abc_h "$commit")' not in $stream range: ${base}..${tip}"
+		if [[ $die ]]; then
+			die_error "$msg"
+		else
+			say "$msg" >&2
+		fi
+	fi
+}
+
 abc_set_upstream()
 {
 	local downstream=$1 upstream=$2 current_upstream
@@ -402,6 +439,10 @@ abc_set_upstream()
 	[[ $downstream && $upstream ]] || die_error "set-upstream requires two parameters: <downstream-commit> <upstream-commit>"
 	abc_rev_verify "${downstream}^{commit}" || die_error "'$downstream' is not a valid commit"
 	abc_rev_verify "${upstream}^{commit}" || die_error "'$upstream' is not a valid commit"
+
+	abc_set_revisions
+	abc_commit_range_check --die 'downstream' "$downstream"
+	abc_commit_range_check --die 'upstream' "$upstream"
 
 	current_upstream=$(abc_flag_get_upstream "$downstream")
 	[[ $current_upstream ]] && warn "Overwriting current upstream for '$downstream' (upstream was '$(abc_h "$current_upstream")')"
@@ -416,24 +457,9 @@ abc_extract_commit()
 	sed -E 's/'"$re"'/ABC_XXXXXX=\1/;/^ABC_XXXXXX=/!d;s/ABC_XXXXXX=//'
 }
 
-abc_commit_in_range()
-{
-	local commit=$1 range=$2
-	declare -a revs
-
-	if [[ $range ]]; then
-		readarray -t revs < <(git rev-parse "$range")
-		if abc_is_ancestor "$commit" "${revs[1]:1}" ||
-		   ! abc_is_ancestor "$commit" "${revs[0]}"; then
-			return 1
-		fi
-	fi
-	return 0
-}
-
 abc_get_upstream_nocheck()
 {
-	local commit=$1 upstream_range=$2 c="${ABC_UPSTREAM_LINK},,"
+	local commit=$1 c="${ABC_UPSTREAM_LINK},,"
 	local p phs re upstream
 	declare -a matches
 
@@ -449,7 +475,7 @@ abc_get_upstream_nocheck()
 		readarray -t matches < <(git log -n1 --pretty="$phs" "$commit" | abc_extract_commit "$re")
 
 		for upstream in "${matches[@]}"; do
-			if abc_rev_verify "${upstream}^{commit}" && abc_commit_in_range "$upstream" "$upstream_range"; then
+			if abc_rev_verify "${upstream}^{commit}"; then
 				upstream=$(abc_H "$upstream")
 				abc_link "$(abc_H "$commit")" "$upstream"
 				echo "$upstream"
@@ -469,7 +495,12 @@ abc_get_upstream()
 	abc_rev_verify "${commit}^{commit}" || die_error "'$commit' is not a valid commit"
 	abc_is_downstream_only "$commit" && die "'$commit' is downstream-only"
 
+	abc_set_revisions
+	abc_commit_range_check --die 'downstream' "$commit"
+
 	upstream=$(abc_get_upstream_nocheck "$commit") || die "No upstream for '$commit' found"
+
+	abc_commit_range_check 'upstream' "$upstream"
 
 	git log -n1 --pretty='%h %s' "$upstream"
 }
@@ -483,9 +514,7 @@ abc_get_downstream_nocheck()
 		return 0
 	fi
 
-	abc_set_revisions
 	commit=$(abc_H "$commit")
-
 	while read -r downstream; do
 		if abc_is_downstream_only "$downstream"; then
 			continue
@@ -508,7 +537,12 @@ abc_get_downstream()
 	[[ $commit ]] || die_error "get-downstream requires a parameter: <upstream-commit>"
 	abc_rev_verify "$commit^{commit}" || die_error "'$commit' is not a valid commit"
 
+	abc_set_revisions
+	abc_commit_range_check --die 'upstream' "$commit"
+
 	downstream=$(abc_get_downstream_nocheck "$commit") || die "No downstream for '$commit' found"
+
+	abc_commit_range_check 'downstream' "$downstream"
 
 	git log -n1 --pretty='%h %s' "$downstream"
 }
@@ -517,7 +551,8 @@ abc_set_links()
 {
 	local commit=$1 upstream_range=$2 upstream
 
-	if abc_get_upstream_nocheck "$commit" "$upstream_range" >/dev/null; then
+	if upstream=$(abc_get_upstream_nocheck "$commit"); then
+		abc_commit_range_check 'upstream' "$upstream" "$upstream_range"
 		return
 	fi
 
@@ -533,7 +568,7 @@ abc_set_links()
 # to ABC_ONLY_DOWNSTREAM
 abc_hunt_cherries()
 {
-	local upstream_range=$1 commit upstream did uid
+	local range=$1 upstream_range=$2 commit upstream did uid
 	declare -a new_downstream_only
 	declare -A downstream_patchid
 
@@ -545,21 +580,22 @@ abc_hunt_cherries()
 		return
 	fi
 
-	for commit in $(abc_list_flag ABC_ONLY_DOWNSTREAM_NEW); do
+	while read -r commit; do
 		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM
 		new_downstream_only+=("$commit")
 		downstream_patchid[$commit]=$(abc_patch_id "$commit")
-	done
+	done < <(git log --notes --pretty=%H --grep '^ABC_ONLY_DOWNSTREAM_NEW' "$range")
+
 	if (( ${#new_downstream_only[@]} == 0 )); then
 		return
 	fi
 
-	abc_list_flag 'ABC_BACKPORT_CANDIDATE|ABC_DEFERRED_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT' |
+	git log --notes --pretty=%H -E --grep '^(ABC_BACKPORT_CANDIDATE|ABC_DEFERRED_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT)' "$upstream_range" |
 	while read -r upstream; do
 		uid=$(abc_patch_id "$upstream")
 		for commit in "${new_downstream_only[@]}"; do
 			did=${downstream_patchid[$commit]}
-			if [ "$did" = "$uid" ] && abc_commit_in_range "$upstream" "$upstream_range"; then
+			if [ "$did" = "$uid" ]; then
 				abc_set_flag "$commit" "ABC_CHERRYPICK=$upstream"
 				abc_set_flag "$upstream" "ABC_DOWNSTREAM=$commit"
 				break
@@ -568,30 +604,78 @@ abc_hunt_cherries()
 	done
 }
 
-abc_set_upstream_range()
+abc_check_range()
 {
 	local range=$1
-	local upstream_range=$2
-	local commit
+	declare -a revs
 
-	if [ "$range" = "" ]; then
+	if [[ ! $range =~ \.\. ]]; then
+		die "fatal: no .. in range: '$range'"
+	elif [[ $range =~ \.\.\. ]]; then
+		die "Range ($range) cannot be a symmetric difference (...)"
+	elif ! git rev-parse "$range" >&/dev/null; then
+		die "'$range' is not a valid"
+	fi
+}
+
+abc_set_upstream_range()
+{
+	local range=$1 upstream_range=$2 commit
+	local downstream_base downstream_tip upstream_base upstream_tip
+
+	if [[ -z $range ]]; then
 		abc_set_revisions
-		range="$ABC_DOWNSTREAM"..
+		downstream_base=$ABC_DOWNSTREAM
+		downstream_tip='HEAD'
+	else
+		abc_check_range "$range"
+		downstream_base="${range%%..*}"
+		downstream_tip="${range#*..}"
+	fi
+
+	if [[ -z $upstream_range ]]; then
+		if [[ $range ]]; then
+			abc_set_revisions
+		fi
+		if [[ $abc_merge_base ]]; then
+			upstream_base=$abc_merge_base
+			upstream_tip=$ABC_UPSTREAM
+		fi
+	else
+		abc_check_range "$upstream_range"
+		upstream_base="${upstream_range%%..*}"
+		upstream_tip="${upstream_range#*..}"
+
+		if [[ "$(git config --get --type bool core.commitGraph)" != true ]]; then
+			warn "core.commitGraph is not enabled. Range checking upstream links will be slow."
+		fi
+	fi
+
+	range="${downstream_base}..${downstream_tip}"
+
+	if [[ $upstream_base ]]; then
+		upstream_range="${upstream_base}..${upstream_tip}"
+		if abc_commit_in_range "$downstream_base" "$upstream_base" "$upstream_tip" ||
+		   abc_commit_in_range "$downstream_tip" "$upstream_base" "$upstream_tip"; then
+			die "Downstream range ($range) and upstream range ($upstream_range) overlap"
+		fi
 	fi
 
 	git log --reverse --pretty=%H "$range" | while read -r commit; do
 		abc_set_links "$commit" "$upstream_range"
 		if [ "$ABC_HUNT_CHERRIES" != "true" ] && abc_is_downstream_only "$commit"; then
-			echo "'$(abc_h "$commit")' is downstream-only" >&2
+			say "'$(abc_h "$commit")' is downstream-only" >&2
 		fi
 	done
 
 	if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
-		abc_hunt_cherries "$upstream_range"
-		git log --reverse --pretty=%H "$range" | while read -r commit; do
-			if abc_is_downstream_only "$commit"; then
-				echo "'$(abc_h "$commit")' is downstream-only" >&2
-			fi
+		if [[ -z $upstream_range ]]; then
+			upstream_range="${ABC_DOWNSTREAM}..${ABC_UPSTREAM}"
+		fi
+		abc_hunt_cherries "$range" "$upstream_range"
+		git log --notes --pretty=%H --reverse "$range" --grep '^ABC_ONLY_DOWNSTREAM' |
+		while read -r commit; do
+			say "'$(abc_h "$commit")' is downstream-only" >&2
 		done
 	fi
 }
@@ -622,13 +706,12 @@ abc_find()
 		fi
 	done
 
-	abc_hunt_cherries
+	abc_hunt_cherries "${ABC_UPSTREAM}..${ABC_DOWNSTREAM}" "${ABC_DOWNSTREAM}..${ABC_UPSTREAM}"
 }
 
 abc_flag()
 {
-	local commit curflag
-	local flag=$1
+	local flag=$1 commit downstream
 	shift
 
 	case "$flag" in
@@ -644,19 +727,21 @@ abc_flag()
 		shift
 	fi
 
+	abc_set_revisions
+
 	for commit in "$@"; do
-		if ! abc_rev_verify "$commit^{commit}"; then
+		if ! abc_rev_verify "${commit}^{commit}"; then
 			echo "Error: '$commit' is not a valid commit" >&2
 			continue
-		fi
-		curflag=$(abc_get_flag "$commit")
-		if grep -q ABC_DOWNSTREAM <<<"$curflag"; then
-			echo "$commit has already been backported. Downstream is ${curflag#*=}." >&2
-			continue
-		elif grep -q -e ABC_ONLY_DOWNSTREAM -e ABC_UPSTREAM -e ABC_CHERRYPICK <<<"$curflag"; then
-			echo "$commit is a downstream commit, can't backport." >&2
+		elif [[ $abc_merge_base ]] && ! abc_commit_in_range "$commit" "$abc_merge_base" "$ABC_UPSTREAM"; then
+			echo "Error: '$commit' not in upstream range: ${abc_merge_base}..${ABC_UPSTREAM}" >&2
 			continue
 		fi
+
+		if downstream=$(abc_flag_get_downstream "$commit"); then
+			warn "Overwriting current downstream for '$commit' (downstream was '$(abc_h "$downstream")')"
+		fi
+
 		abc_set_flag "$commit" "$flag"
 	done
 }
@@ -777,6 +862,7 @@ abc_get_config()
 	printf 'ABC_SHOULD_HIGHLIGHT=%q\n'	"$ABC_SHOULD_HIGHLIGHT"
 	printf 'ABC_UPSTREAM_LINK=%q\n'		"$ABC_UPSTREAM_LINK"
 	printf 'ABC_HUNT_CHERRIES=%q\n'		"$ABC_HUNT_CHERRIES"
+	printf 'ABC_RANGE_CHECKS=%q\n'		"$ABC_RANGE_CHECKS"
 	printf 'ABC_UPSTREAM=%q\n'		"$ABC_UPSTREAM"
 	printf 'ABC_DOWNSTREAM=%q\n'		"$ABC_DOWNSTREAM"
 	printf 'ABC_PATHS=%q\n'			"$ABC_PATHS"

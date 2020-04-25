@@ -15,7 +15,7 @@ git-abc \- Find and manage backport candidates
 \fIgit abc\fR accept <commit>...
 \fIgit abc\fR defer <commit>...
 \fIgit abc\fR set-upstream <downstream-commit> <upstream-commit>
-\fIgit abc\fR set-upstream-range [<downstream-range>] [<upstream-range>]
+\fIgit abc\fR set-upstream-range [<downstream-range> [<upstream-range>]]
 \fIgit abc\fR get-upstream <downstream-commit>
 \fIgit abc\fR get-downstream <upstream-commit>
 \fIgit abc\fR reset [--force]
@@ -113,15 +113,15 @@ Note, even when the upstream link is missing, wrong, or points to a commit in a 
 See \fBgit-cherry\fR(1) and \fBgit-patch-id\fR(1) for what defines equivalence.
 .RE
 .PP
-set-upstream-range [<downstream-range>] [<upstream-range>]
+set-upstream-range [<downstream-range> [<upstream-range>]]
 .RS 4
 When a downstream range is known to have commits with upstream-links, then this command can be used to quickly set the upstream linkage of each commit in the range.
 .sp
 If <downstream-range> is not provided then it defaults to '{downstream}..',  where {downstream} is the same as what would be selected for <downstream> of the 'find' command when it's not provided.
 .sp
-If <upstream-range> is provided then the linkage will only be set if the linked upstream commit is within that range.
+If <upstream-range> is provided, then range checking will be enabled, even if abc.range-checks is false (see CONFIGURATION:abc.range-checks), and each linkage will be checked against the given upstream range.
 set-upstream-range may take much more time to complete when given an upstream range.
-To speed it up, as well as other git-abc commands, it's recommended to enable core.commitGraph (see git-config(1) and git document technical/commit-graph.txt)
+To speed it up, as well as other git-abc commands, it's recommended to enable core.commitGraph (see \fBgit-config\fR(1) and git document technical/commit-graph.txt)
 .sp
 When true, abc.hunt-cherries (see CONFIGURATION:abc.hunt-cherries) will enable cherry-pick searching, just as it does for the 'find' command.
 However 'find' should be run first with the upstream that should be searched for the potential cherry-picks.
@@ -166,11 +166,15 @@ The configuration is output with shell quoting, ready to be import to the caller
 abc.upstream
 .RS 4
 The upstream revision pointer, see \fBgitrevisions\fR(7).
+.sp
+The ABC_UPSTREAM environment variable may be used to override this config.
 .RE
 .PP
 abc.downstream
 .RS 4
 The downstream revision pointer, see \fBgitrevisions\fR(7).
+.sp
+The ABC_DOWNSTREAM environment variable may be used to override this config.
 .RE
 .PP
 abc.namespace
@@ -221,6 +225,17 @@ To enable, set to 'true'.
 The ABC_HUNT_CHERRIES environment variable may be used to override this config.
 .RE
 .PP
+abc.range-checks
+.RS 4
+Ensure commits are members of their expected commit ranges (i.e. they're on the upstream or downstream branches).
+Error out on unexpected user input and warn on unexpected upstream links.
+This is enabled ('true') by default, but it's a bit expensive to do.
+When speed is more important than the checks, then the checks may be disabled by setting this config to 'false'.
+The range checks will also be disabled, regardless of the value of this config, when core.commitGraph (see \fBgit-config\fR(1) and git document technical/commit-graph.txt) is not enabled.
+.sp
+The ABC_RANGE_CHECKS environment variable may be used to override this config.
+.RE
+.PP
 abc.todo-path
 .RS 4
 The path of the directory to create (if it doesn't already exist) and use for the todo file needed when editing the backport candidate list with 'select'.
@@ -239,6 +254,7 @@ ABC_TODO_PATH
 ABC_SHOULD_HIGHLIGHT
 ABC_UPSTREAM_LINK
 ABC_HUNT_CHERRIES
+ABC_RANGE_CHECKS
 ABC_UPSTREAM
 ABC_DOWNSTREAM
 ABC_PATHS
