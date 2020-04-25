@@ -399,24 +399,14 @@ abc_set_upstream()
 {
 	local downstream=$1 upstream=$2 current_upstream
 
-	if [ "$downstream" = "" ] || [ "$upstream" = "" ]; then
-		die_error "set-upstream requires two parameters: <downstream-commit> <upstream-commit>"
-	fi
-	if ! abc_rev_verify "$downstream^{commit}"; then
-		die_error "'$downstream' is not a valid commit"
-	fi
-	if ! abc_rev_verify "$upstream^{commit}"; then
-		die_error "'$upstream' is not a valid commit"
-	fi
-	downstream=$(abc_H "$downstream")
-	upstream=$(abc_H "$upstream")
+	[[ $downstream && $upstream ]] || die_error "set-upstream requires two parameters: <downstream-commit> <upstream-commit>"
+	abc_rev_verify "${downstream}^{commit}" || die_error "'$downstream' is not a valid commit"
+	abc_rev_verify "${upstream}^{commit}" || die_error "'$upstream' is not a valid commit"
 
 	current_upstream=$(abc_flag_get_upstream "$downstream")
-	if [ "$current_upstream" ]; then
-		warn "Overwriting current upstream for '$downstream' (upstream was '$(abc_h "$current_upstream")')"
-	fi
+	[[ $current_upstream ]] && warn "Overwriting current upstream for '$downstream' (upstream was '$(abc_h "$current_upstream")')"
 
-	abc_link "$downstream" "$upstream"
+	abc_link "$(abc_H "$downstream")" "$(abc_H "$upstream")"
 }
 
 abc_extract_commit()
@@ -426,19 +416,30 @@ abc_extract_commit()
 	sed -E 's/'"$re"'/ABC_XXXXXX=\1/;/^ABC_XXXXXX=/!d;s/ABC_XXXXXX=//'
 }
 
+abc_commit_in_range()
+{
+	local commit=$1 range=$2
+	declare -a revs
+
+	if [[ $range ]]; then
+		readarray -t revs < <(git rev-parse "$range")
+		if abc_is_ancestor "$commit" "${revs[1]:1}" ||
+		   ! abc_is_ancestor "$commit" "${revs[0]}"; then
+			return 1
+		fi
+	fi
+	return 0
+}
+
 abc_get_upstream_nocheck()
 {
-	# Outputs the upstream commit and returns 1 if there's already an ABC flag
-	# Outputs the upstream commit and returns 0 if we found it on a search
-	# Outputs nothing and returns 0 if we couldn't find an upstream
-	local commit=$1 c="${ABC_UPSTREAM_LINK},,"
+	local commit=$1 upstream_range=$2 c="${ABC_UPSTREAM_LINK},,"
 	local p phs re upstream
 	declare -a matches
 
-	upstream=$(abc_flag_get_upstream "$commit")
-	if [ "$upstream" ]; then
+	if upstream=$(abc_flag_get_upstream "$commit"); then
 		echo "$upstream"
-		return 1
+		return 0
 	fi
 
 	while [[ "$c" ]]; do
@@ -448,42 +449,34 @@ abc_get_upstream_nocheck()
 		readarray -t matches < <(git log -n1 --pretty="$phs" "$commit" | abc_extract_commit "$re")
 
 		for upstream in "${matches[@]}"; do
-			if abc_rev_verify "${upstream}^{commit}"; then
-				abc_H "$upstream"
+			if abc_rev_verify "${upstream}^{commit}" && abc_commit_in_range "$upstream" "$upstream_range"; then
+				upstream=$(abc_H "$upstream")
+				abc_link "$(abc_H "$commit")" "$upstream"
+				echo "$upstream"
 				return 0
 			fi
 		done
 	done
 
-	return 0
+	return 1
 }
 
 abc_get_upstream()
 {
-	local commit=$1
-	local upstream
+	local commit=$1 upstream
 
-	if [ "$commit" = "" ]; then
-		die_error "get-upstream requires a parameter: <downstream-commit>"
-	fi
-	if ! abc_rev_verify "$commit^{commit}"; then
-		die_error "'$commit' is not a valid commit"
-	fi
-	if abc_is_downstream_only "$commit"; then
-		die "'$commit' is downstream-only"
-	fi
+	[[ $commit ]] || die_error "get-upstream requires a parameter: <downstream-commit>"
+	abc_rev_verify "${commit}^{commit}" || die_error "'$commit' is not a valid commit"
+	abc_is_downstream_only "$commit" && die "'$commit' is downstream-only"
 
-	upstream=$(abc_get_upstream_nocheck "$commit")
-	if [ -z "$upstream" ]; then
-		die "No upstream for '$commit' found"
-	fi
+	upstream=$(abc_get_upstream_nocheck "$commit") || die "No upstream for '$commit' found"
 
 	git log -n1 --pretty='%h %s' "$upstream"
 }
 
 abc_get_downstream_nocheck()
 {
-	local commit=$1 upstream downstream
+	local commit=$1 downstream
 
 	if downstream=$(abc_flag_get_downstream "$commit"); then
 		echo "$downstream"
@@ -497,8 +490,7 @@ abc_get_downstream_nocheck()
 		if abc_is_downstream_only "$downstream"; then
 			continue
 		fi
-		if upstream=$(abc_get_upstream_nocheck "$downstream") && [ "$upstream" ]; then
-			abc_link "$downstream" "$upstream"
+		if abc_get_upstream_nocheck "$downstream" >/dev/null; then
 			echo "$downstream"
 			return 0
 		fi
@@ -509,57 +501,29 @@ abc_get_downstream_nocheck()
 
 abc_get_downstream()
 {
-	local commit=$1
-	local downstream
+	local commit=$1 downstream
 
-	if [ "$commit" = "" ]; then
-		die_error "get-downstream requires a parameter: <upstream-commit>"
-	fi
-	if ! abc_rev_verify "$commit^{commit}"; then
-		die_error "'$commit' is not a valid commit"
-	fi
+	[[ $commit ]] || die_error "get-downstream requires a parameter: <upstream-commit>"
+	abc_rev_verify "$commit^{commit}" || die_error "'$commit' is not a valid commit"
 
-	if ! downstream=$(abc_get_downstream_nocheck "$commit"); then
-		die "No downstream for '$commit' found"
-	fi
+	downstream=$(abc_get_downstream_nocheck "$commit") || die "No downstream for '$commit' found"
 
 	git log -n1 --pretty='%h %s' "$downstream"
-}
-
-abc_commit_in_range()
-{
-	local commit=$1 range=$2
-	declare -a revs
-
-	if [ "$range" ]; then
-		readarray -t revs < <(git rev-parse "$range")
-		if abc_is_ancestor "$commit" "${revs[1]:1}" ||
-		   ! abc_is_ancestor "$commit" "${revs[0]}"; then
-			return 1
-		fi
-	fi
-	return 0
 }
 
 abc_set_links()
 {
 	local commit=$1 upstream_range=$2 upstream
 
-	if ! upstream=$(abc_get_upstream_nocheck "$commit"); then
-		# Move along... we've seen this commit before.
+	if abc_get_upstream_nocheck "$commit" "$upstream_range" >/dev/null; then
 		return
 	fi
 
-	if [ "$upstream" = "" ] || ! abc_commit_in_range "$upstream" "$upstream_range"; then
-		if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
-			abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM_NEW
-		else
-			abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM
-		fi
-		return
+	if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
+		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM_NEW
+	else
+		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM
 	fi
-
-	abc_link "$commit" "$upstream"
 }
 
 # When ABC_HUNT_CHERRIES is true, abc_hunt_cherries() should be called after
