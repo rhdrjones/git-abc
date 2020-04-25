@@ -533,13 +533,12 @@ abc_set_links()
 # to ABC_ONLY_DOWNSTREAM
 abc_hunt_cherries()
 {
-	declare -a new_downstream_only possible_cherries
-	declare -A downstream_patchid upstream_patchid
-	local commit upstream did uid
-	local upstream_range=$1
+	local upstream_range=$1 commit upstream did uid
+	declare -a new_downstream_only
+	declare -A downstream_patchid
 
 	# Any new downstream-only commits, that have matching upstream commits, were
-	# likely cherry picked from a different upstream tree, which was then later
+	# likely cherry-picked from a different upstream tree, which was then later
 	# merged to the specified upstream. We can fix up these commits automatically.
 	# It's expensive to do, though, so require abc.hunt-cherries to be set true.
 	if [ "$ABC_HUNT_CHERRIES" != "true" ]; then
@@ -551,23 +550,15 @@ abc_hunt_cherries()
 		new_downstream_only+=("$commit")
 		downstream_patchid[$commit]=$(abc_patch_id "$commit")
 	done
-	if (( ${#new_downstream_only[*]} == 0 )); then
+	if (( ${#new_downstream_only[@]} == 0 )); then
 		return
 	fi
 
-	readarray -t possible_cherries < <(abc_list_flag 'ABC_BACKPORT_CANDIDATE|ABC_DEFERRED_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT')
-	if (( ${#possible_cherries[*]} == 0 )); then
-		return
-	fi
-
-	for commit in ${new_downstream_only[*]}; do
-		did=${downstream_patchid[$commit]}
-		for upstream in ${possible_cherries[*]}; do
-			uid=${upstream_patchid[$upstream]}
-			if [ "$uid" = "" ]; then
-				upstream_patchid[$upstream]=$(abc_patch_id "$upstream")
-				uid=${upstream_patchid[$upstream]}
-			fi
+	abc_list_flag 'ABC_BACKPORT_CANDIDATE|ABC_DEFERRED_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT' |
+	while read -r upstream; do
+		uid=$(abc_patch_id "$upstream")
+		for commit in "${new_downstream_only[@]}"; do
+			did=${downstream_patchid[$commit]}
 			if [ "$did" = "$uid" ] && abc_commit_in_range "$upstream" "$upstream_range"; then
 				abc_set_flag "$commit" "ABC_CHERRYPICK=$upstream"
 				abc_set_flag "$upstream" "ABC_DOWNSTREAM=$commit"
