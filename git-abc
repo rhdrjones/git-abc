@@ -476,7 +476,7 @@ abc_get_upstream()
 
 abc_get_downstream_nocheck()
 {
-	local commit=$1 downstream
+	local commit=$1 upstream downstream
 
 	if downstream=$(abc_flag_get_downstream "$commit"); then
 		echo "$downstream"
@@ -490,9 +490,11 @@ abc_get_downstream_nocheck()
 		if abc_is_downstream_only "$downstream"; then
 			continue
 		fi
-		if abc_get_upstream_nocheck "$downstream" >/dev/null; then
-			echo "$downstream"
-			return 0
+		if upstream=$(abc_get_upstream_nocheck "$downstream"); then
+			if [ "$upstream" = "$commit" ]; then
+				echo "$downstream"
+				return 0
+			fi
 		fi
 	done < <(git log --pretty=%H --grep "${commit:0:8}" "$ABC_UPSTREAM..$ABC_DOWNSTREAM")
 
