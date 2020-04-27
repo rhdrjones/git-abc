@@ -253,9 +253,34 @@ abc_flag_get_downstream()
 	return 1
 }
 
+abc_check_links()
+{
+	local downstream=$1 upstream=$2 u d
+
+	if u=$(abc_flag_get_upstream "$downstream") && [ "$u" != "$upstream" ]; then
+		warn "Overwriting current upstream for '$(abc_h "$downstream")' (upstream was '$(abc_h "$u")')"
+	fi
+
+	if d=$(abc_flag_get_downstream "$upstream") && [ "$d" != "$downstream" ]; then
+		warn "Overwriting current downstream for '$(abc_h "$upstream")' (downstream was '$(abc_h "$d")')"
+	fi
+}
+
+abc_link_cherry()
+{
+	local downstream=$1 upstream=$2
+
+	abc_check_links "$downstream" "$upstream"
+
+	abc_set_flag "$downstream" "ABC_CHERRYPICK=$upstream"
+	abc_set_flag "$upstream" "ABC_DOWNSTREAM=$downstream"
+}
+
 abc_link()
 {
 	local downstream=$1 upstream=$2
+
+	abc_check_links "$downstream" "$upstream"
 
 	if abc_is_cherry "$downstream" "$upstream"; then
 		abc_set_flag "$downstream" "ABC_CHERRYPICK=$upstream"
@@ -444,9 +469,6 @@ abc_set_upstream()
 	abc_commit_range_check --die 'downstream' "$downstream"
 	abc_commit_range_check --die 'upstream' "$upstream"
 
-	current_upstream=$(abc_flag_get_upstream "$downstream")
-	[[ $current_upstream ]] && warn "Overwriting current upstream for '$downstream' (upstream was '$(abc_h "$current_upstream")')"
-
 	abc_link "$(abc_H "$downstream")" "$(abc_H "$upstream")"
 }
 
@@ -596,8 +618,7 @@ abc_hunt_cherries()
 		for commit in "${new_downstream_only[@]}"; do
 			did=${downstream_patchid[$commit]}
 			if [ "$did" = "$uid" ]; then
-				abc_set_flag "$commit" "ABC_CHERRYPICK=$upstream"
-				abc_set_flag "$upstream" "ABC_DOWNSTREAM=$commit"
+				abc_link_cherry "$commit" "$upstream"
 				break
 			fi
 		done
