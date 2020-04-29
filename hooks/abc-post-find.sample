@@ -1,0 +1,14 @@
+#!/bin/bash
+#SPDX-License-Identifier: MIT
+
+#
+# Here's a good place to reject commits that we know we'll never backport.
+#
+# git abc reject abcd1234
+# ...
+
+#
+# Or, even whole classes of commits
+#
+# git abc reject $(git abc list | awk '/ treewide: / {print$1}')
+# ...

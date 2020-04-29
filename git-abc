@@ -40,6 +40,8 @@ LONG_USAGE="Find and manage backport candidates
 }
 # shellcheck disable=SC1090
 . "$(git --exec-path)/git-sh-setup"
+require_work_tree
+cd_to_toplevel
 set_reflog_action abc
 
 die_error() { echo -n "Error: " >&2; die "$1"; }
@@ -68,6 +70,7 @@ ABC_DEFAULT_SHOULD_HIGHLIGHT="%s:fix|Fix|FIX|Revert,,%b:^[Cc][Cc]: *<?[Ss]table[
 ABC_DEFAULT_UPSTREAM_LINK="%b:^commit ([0-9a-f]{40})$,,%b:^\(cherry picked from commit ([0-9a-f]{40})\)$"
 ABC_DEFAULT_NAMESPACE="git-abc"
 ABC_DEFAULT_TODO_PATH="$GIT_DIR/git-abc-todo"
+ABC_DEFAULT_HOOK_PATH="$GIT_DIR/hooks"
 ABC_DEFAULT_HUNT_CHERRIES="$(abc_bool 'false')"
 ABC_DEFAULT_RANGE_CHECKS="$(abc_bool 'true')"
 
@@ -123,6 +126,12 @@ fi
 abc_set_parameter 'ABC_TODO_PATH' "$ABC_DEFAULT_TODO_PATH" \
 		  'abc.todo-path' 'git config --get --type path abc.todo-path'
 if [ -e "$ABC_TODO_PATH" ] && [ ! -d "$ABC_TODO_PATH" ]; then
+	die_error "$abc_parameter is not a directory"
+fi
+
+abc_set_parameter 'ABC_HOOK_PATH' "$ABC_DEFAULT_HOOK_PATH" \
+		  'abc.hook-path' 'git config --get --type path abc.hook-path'
+if [ -e "$ABC_HOOK_PATH" ] && [ ! -d "$ABC_HOOK_PATH" ]; then
 	die_error "$abc_parameter is not a directory"
 fi
 
@@ -214,6 +223,30 @@ abc_get_limits()
 	fi
 
 	abc_set_revisions "$upstream" "$downstream"
+}
+
+abc_get_config()
+{
+	abc_get_limits "$@"
+
+	printf 'ABC_NAMESPACE=%q\n'		"$ABC_NAMESPACE"
+	printf 'ABC_TODO_PATH=%q\n'		"$ABC_TODO_PATH"
+	printf 'ABC_HOOK_PATH=%q\n'		"$ABC_HOOK_PATH"
+	printf 'ABC_SHOULD_HIGHLIGHT=%q\n'	"$ABC_SHOULD_HIGHLIGHT"
+	printf 'ABC_UPSTREAM_LINK=%q\n'		"$ABC_UPSTREAM_LINK"
+	printf 'ABC_HUNT_CHERRIES=%q\n'		"$ABC_HUNT_CHERRIES"
+	printf 'ABC_RANGE_CHECKS=%q\n'		"$ABC_RANGE_CHECKS"
+	printf 'ABC_UPSTREAM=%q\n'		"$ABC_UPSTREAM"
+	printf 'ABC_DOWNSTREAM=%q\n'		"$ABC_DOWNSTREAM"
+	printf 'ABC_PATHS=%q\n'			"$ABC_PATHS"
+}
+
+abc_export_config()
+{
+	export ABC_NAMESPACE ABC_UPSTREAM ABC_DOWNSTREAM ABC_PATHS
+	export ABC_SHOULD_HIGHLIGHT ABC_UPSTREAM_LINK
+	export ABC_HUNT_CHERRIES ABC_RANGE_CHECKS
+	export ABC_TODO_PATH ABC_HOOK_PATH
 }
 
 #
@@ -701,11 +734,59 @@ abc_set_upstream_range()
 	fi
 }
 
+abc_evil_merge()
+{
+	local commit=$1 line their_file our_file r a
+
+	if ! git show --pretty=%H "$commit" -- $ABC_PATHS |
+	   grep -E -v '^(\+\+\+|---) [ab]\/' | grep -E -q '^(\+\+|--)'; then
+		return 1
+	fi
+
+	while IFS= read -r line; do
+		if [[ $line =~ ^---\ [ab]/ ]]; then
+			if [[ $r || $a ]]; then
+				if ! test -x "$ABC_HOOK_PATH/abc-ignore-evil-merge" ||
+				   ! "$ABC_HOOK_PATH/abc-ignore-evil-merge" "$commit" "$their_file" "$our_file" "$r$a"; then
+					return 0
+				fi
+				unset r a
+			fi
+			their_file=${line:6}
+			continue
+		elif [[ $line =~ ^\+\+\+\ [ab]/ ]]; then
+			our_file=${line:6}
+			continue
+		elif [[ $line =~ ^-- ]]; then
+			r='r'
+			continue
+		elif [[ $line =~ ^\+\+ ]]; then
+			a='a'
+			continue
+		fi
+	done < <(git show --pretty=%H "$commit" -- $ABC_PATHS)
+
+	if [[ $r || $a ]]; then
+		if ! test -x "$ABC_HOOK_PATH/abc-ignore-evil-merge" ||
+		   ! "$ABC_HOOK_PATH/abc-ignore-evil-merge" "$commit" "$their_file" "$our_file" "$r$a"; then
+			return 0
+		fi
+	fi
+
+	return 1
+}
+
 abc_find()
 {
-	local mark commit parents files
+	local mark commit parents
 
 	abc_get_limits "$@"
+	abc_export_config
+
+	if test -x "$ABC_HOOK_PATH/abc-pre-find" && ! "$ABC_HOOK_PATH/abc-pre-find"; then
+		say "abc-pre-find hook failed. Aborting find."
+		return
+	fi
 
 	git log --parents --pretty='%m %H %P' --left-right \
 			"$ABC_UPSTREAM"..."$ABC_DOWNSTREAM" -- $ABC_PATHS |
@@ -718,16 +799,19 @@ abc_find()
 			# parent means a merge. Most merges are clean, or the changes that appear with
 			# 'git-show' come directly from one of the parents. Those merges aren't
 			# interesting and so we automatically reject them.
-			if [[ $parents =~ ' ' ]] && ! git show --pretty=%H "$commit" -- $ABC_PATHS |
-						    grep -E -v '^(\+\+\+|---) [ab]\/' | grep -q -E '^(\+\+|--)'; then
+			if [[ $parents =~ ' ' ]] && ! abc_evil_merge "$commit"; then
 				abc_set_flag "$commit" ABC_DONT_WANT
-				continue
+			else
+				abc_set_flag "$commit" ABC_BACKPORT_CANDIDATE
 			fi
-			abc_set_flag "$commit" ABC_BACKPORT_CANDIDATE
 		fi
 	done
 
 	abc_hunt_cherries "${ABC_UPSTREAM}..${ABC_DOWNSTREAM}" "${ABC_DOWNSTREAM}..${ABC_UPSTREAM}"
+
+	if test -x "$ABC_HOOK_PATH/abc-post-find" && ! "$ABC_HOOK_PATH/abc-post-find"; then
+		say "abc-post-find hook failed."
+	fi
 }
 
 abc_flag()
@@ -872,21 +956,6 @@ EOF
 			;;
 		esac
 	done
-}
-
-abc_get_config()
-{
-	abc_get_limits "$@"
-
-	printf 'ABC_NAMESPACE=%q\n'		"$ABC_NAMESPACE"
-	printf 'ABC_TODO_PATH=%q\n'		"$ABC_TODO_PATH"
-	printf 'ABC_SHOULD_HIGHLIGHT=%q\n'	"$ABC_SHOULD_HIGHLIGHT"
-	printf 'ABC_UPSTREAM_LINK=%q\n'		"$ABC_UPSTREAM_LINK"
-	printf 'ABC_HUNT_CHERRIES=%q\n'		"$ABC_HUNT_CHERRIES"
-	printf 'ABC_RANGE_CHECKS=%q\n'		"$ABC_RANGE_CHECKS"
-	printf 'ABC_UPSTREAM=%q\n'		"$ABC_UPSTREAM"
-	printf 'ABC_DOWNSTREAM=%q\n'		"$ABC_DOWNSTREAM"
-	printf 'ABC_PATHS=%q\n'			"$ABC_PATHS"
 }
 
 #

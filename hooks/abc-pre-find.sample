@@ -1,0 +1,19 @@
+#!/bin/bash
+#SPDX-License-Identifier: MIT
+
+#
+# Prepare upstream and downstream
+#
+
+git fetch upstream
+git fetch downstream
+
+#
+# If we're on a backport dev branch, then make sure we get the
+# commits on the dev branch linked too.
+#
+
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse "$ABC_DOWNSTREAM")" ]] &&
+   git merge-base --is-ancestor "$ABC_DOWNSTREAM" HEAD; then
+	ABC_HUNT_CHERRIES=off git abc set-upstream-range
+fi

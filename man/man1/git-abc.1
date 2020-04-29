@@ -38,6 +38,8 @@ When the configuration settings are not set, then upstream defaults to <branch-o
 .sp
 The <upstream>, <downstream>, and <path>... parameters may also be provided with ABC_UPSTREAM, ABC_DOWNSTREAM, and ABC_PATHS environment variables.
 When both a command line parameter and an environment variable are provided, the command line parameter takes precedence.
+.sp
+Three hooks (see HOOKS) may be used with find: abc-pre-find, abc-post-find, and abc-ignore-evil-merge.
 .RE
 .PP
 list|list-fixes [<option>] [<upstream> [<downstream>]]
@@ -161,6 +163,55 @@ Display the configuration variables determined from the environment and git conf
 The {upstream} and {downstream} displayed are the same as would be selected with the other commands such as 'find' and 'list' when given the same input.
 The configuration is output with shell quoting, ready to be import to the callers environment.
 .RE
+.SH "HOOKS"
+.PP
+Hooks are programs you can place in a hooks directory to trigger actions at certain points in git’s execution (see \fBgithooks\fR(5)).
+Hooks that don’t have the executable bit set are ignored.
+The default hooks directory for git-abc is \fB$GIT_DIR/hooks\fR, but that can be changed via the abc.hook-path configuration variable (see CONFIGURATION:abc.hook-path).
+git-abc changes its current working directory to the root of the working tree, so all hooks are executed from there.
+Additionally, all hooks are started with all git-abc configuration environment variables (see ENVIRONMENT) set with the current configuration.
+Hooks may also get their input from command-line arguments and stdin.
+See the documentation for each hook below for details.
+.RE
+.PP
+abc-pre-find
+.RS 4
+This hook runs once right before 'find' is run.
+abc-pre-find does not take any command-line arguments, nor read from stdin.
+abc-pre-find exits with zero (0) when it successful completes.
+If abc-pre-find exits with a non-zero exit code, then it failed, and 'find' will be aborted.
+This hook is good for preparing the upstream and downstream branches for 'find'.
+.RE
+.PP
+abc-post-find
+.RS 4
+This hook runs once right after 'find' is run.
+abc-post-find does not take any command-line arguments, nor read from stdin.
+abc-post-find exits with zero (0) when it successful completes and non-zero otherwise.
+This hook is good for immediately rejecting candidate commits that are known to be unwanted.
+.RE
+.PP
+abc-ignore-evil-merge
+.RS 4
+This hook runs once for each file containing "evil" changes of an "evil" merge (see \fBgitglossary\fR(7):\fBevil merge\fR).
+abc-ignore-evil-merge does not read from stdin, but it takes four command line arguments, which are:
+.sp
+.nf
+    commit:     The full commit hash of the "evil" merge commit
+    their_file: The file name of the "their" side of the merge where the "evil" change was made
+    our_file:   The file name of the "our" side of the merge where the "evil" change was made
+    flags:      Either "r", "a", or "ra", where "r" means there are "evil" removals, "a" means
+                there are "evil" additions, and "ra" means there are both
+.fi
+.sp
+If the exit code is zero (0), then the "evil" merge may be ignored.
+If the exit code is non-zero, then, either the hook failed, or the "evil" merge cannot be ignored.
+In either non-zero exit code case, git-abc will not ignore the "evil" merge.
+This hook is good for eliminating merge commits from the candidate list that are known to be safe.
+For example, if the "evil" changes are only whitespace.
+.sp
+Sample hook scripts are in the hooks directory of the git-abc git repository.
+.RE
 .SH CONFIGURATION
 .PP
 abc.upstream
@@ -247,10 +298,23 @@ The default is:
 .sp
 The ABC_TODO_PATH environment variable may be used to override this config.
 .RE
+.PP
+abc.hook-path
+.RS 4
+The path of the directory where the git-abc hooks (see HOOKS) reside.
+The default is:
+.sp
+.nf
+  "$GIT_DIR/hooks"
+.fi
+.sp
+The ABC_HOOK_PATH environment variable may be used to override this config.
+.RE
 .SH "ENVIRONMENT"
 .nf
 ABC_NAMESPACE
 ABC_TODO_PATH
+ABC_HOOK_PATH
 ABC_SHOULD_HIGHLIGHT
 ABC_UPSTREAM_LINK
 ABC_HUNT_CHERRIES
