@@ -778,7 +778,7 @@ abc_evil_merge()
 
 abc_find()
 {
-	local mark commit parents
+	local commit parents
 
 	abc_get_limits "$@"
 	abc_export_config
@@ -788,23 +788,24 @@ abc_find()
 		return
 	fi
 
-	git log --parents --pretty='%m %H %P' --left-right \
-			"$ABC_UPSTREAM"..."$ABC_DOWNSTREAM" -- $ABC_PATHS |
-	while read -r mark commit parents; do
-		if [ "$mark" = '>' ]; then
-			abc_set_links "$commit"
-		elif ! abc_get_flag "$commit" >/dev/null; then
-			# If this commit hasn't already been backported, then it's a candidate. However,
-			# if $parents has a space it means there's more than one, and more than one
-			# parent means a merge. Most merges are clean, or the changes that appear with
-			# 'git-show' come directly from one of the parents. Those merges aren't
-			# interesting and so we automatically reject them.
-			if [[ $parents =~ ' ' ]] && ! abc_evil_merge "$commit"; then
-				abc_set_flag "$commit" ABC_DONT_WANT
-			else
-				abc_set_flag "$commit" ABC_BACKPORT_CANDIDATE
-			fi
+	git log --notes --no-merges --pretty=%H "${ABC_UPSTREAM}..${ABC_DOWNSTREAM}" --invert-grep --grep '^ABC_UPSTREAM\|^ABC_CHERRYPICK' -- $ABC_PATHS |
+	while read -r commit; do
+		abc_set_links "$commit"
+	done
+
+	git log --notes --parents --pretty='%H %P' --invert-grep --grep ^ABC_ "${ABC_DOWNSTREAM}..${ABC_UPSTREAM}" -- $ABC_PATHS |
+	while read -r commit parents; do
+		# If this commit hasn't already been backported or flagged in some way, then
+		# it's a candidate. However, if $parents has a space it means there's more than
+		# one, and more than one parent means a merge. Most merges are clean -- the
+		# changes that appear with 'git-show' come directly from one of the parents.
+		# Those merges aren't interesting and so we automatically reject them.
+		if [[ $parents =~ ' ' ]] && ! abc_evil_merge "$commit"; then
+			abc_set_flag "$commit" ABC_DONT_WANT
+			continue
 		fi
+
+		abc_set_flag "$commit" ABC_BACKPORT_CANDIDATE
 	done
 
 	abc_hunt_cherries "${ABC_UPSTREAM}..${ABC_DOWNSTREAM}" "${ABC_DOWNSTREAM}..${ABC_UPSTREAM}"

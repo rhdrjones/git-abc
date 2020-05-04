@@ -31,7 +31,8 @@ All state is stored in the git repository using \fBgit-notes\fR(1).
 .PP
 find [<upstream> [<downstream>]] [[--] <path>...]
 .RS 4
-Find backport candidates in the symmetric difference of <upstream> and <downstream> related to files in <path>...
+Find backport candidates in <upstream> related to files in <path>...
+Any upstream commits already backported will be linked to their downstream commits when the downstream commits have upstream-links (see CONFIGURATION:abc.upstream-link).
 When not provided, <upstream> defaults to the abc.upstream configuration setting and <downstream> defaults to abc.downstream.
 When the configuration settings are not set, then upstream defaults to <branch-of-<downstream>>@{upstream}, if it exists, and downstream defaults to HEAD.
 <path>... defaults to all files.
