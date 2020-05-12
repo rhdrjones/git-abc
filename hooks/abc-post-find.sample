@@ -2,13 +2,9 @@
 #SPDX-License-Identifier: MIT
 
 #
-# Here's a good place to reject commits that we know we'll never backport.
+# Here's a good place to reject whole classes of commits based on
+# something other than their commit hashes (for example the tags
+# in their summaries).  A better place to reject commits based
+# on their commit hashes is in the abc-pre-find hook.
 #
-# git abc reject abcd1234
-# ...
-
-#
-# Or, even whole classes of commits
-#
-# git abc reject $(git abc list | awk '/ treewide: / {print$1}')
-# ...
+git abc reject $(git abc list | awk '/ treewide: / {print$1}')
