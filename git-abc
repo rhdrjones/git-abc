@@ -395,6 +395,7 @@ abc_reset()
 	fi
 
 	git notes | awk '{print$2}' | git notes remove --stdin 2>/dev/null
+	git notes prune
 }
 
 abc_should_highlight()
