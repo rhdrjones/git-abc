@@ -46,8 +46,8 @@ Workflow
       $ git clone $UPSTREAM_URL
       $ cd $REPO
       $ git checkout -b downstream
-      $ git config --add abc.upstream master
-      $ git config --add abc.downstream downstream
+      $ git config abc.upstream master
+      $ git config abc.downstream downstream
 
     When 'downstream' has its own remote repo, then either it or the
     upstream repo may be cloned (or neither, when cloning a third repo).
@@ -58,9 +58,9 @@ Workflow
 
       $ git clone $DOWNSTREAM_URL
       $ cd $REPO
-      $ git config --add abc.downstream origin/master
+      $ git config abc.downstream origin/master
       $ git remote add -f upstream $UPSTREAM_URL
-      $ git config --add abc.upstream upstream/master
+      $ git config abc.upstream upstream/master
 
     When using a third repo, then both 'downstream' and 'upstream' are
     remotes::
@@ -68,8 +68,8 @@ Workflow
       $ cd $REPO
       $ git remote add -f downstream $DOWNSTREAM_URL
       $ git remote add -f upstream $UPSTREAM_URL
-      $ git config --add abc.downstream downstream/master
-      $ git config --add abc.upstream upstream/master
+      $ git config abc.downstream downstream/master
+      $ git config abc.upstream upstream/master
 
 2.  If necessary, override the regular expressions used to identify
     interesting upstream commits and/or the upstream links in downstream
