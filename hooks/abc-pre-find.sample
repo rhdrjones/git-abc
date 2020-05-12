@@ -14,6 +14,14 @@ git fetch downstream
 # ...
 
 #
+# Allow a list of commits to reject to be provided. The format is one commit
+# hash per line. The commits may be listed with their summaries as only the
+# first space-separated field is used.
+#
+: "${ABC_REJECT_LIST:=abc-reject-list}"
+[ -f "$ABC_REJECT_LIST" ] && git abc reject $(awk '{print$1}' "$ABC_REJECT_LIST") 2>/dev/null
+
+#
 # If we're on a backport dev branch, then make sure we get the
 # commits on the dev branch linked too.
 #
