@@ -47,8 +47,6 @@ set_reflog_action abc
 die_error() { echo -n "Error: " >&2; die "$1"; }
 warn() { say "Warning: $1" >&2; }
 
-unset abc_merge_base
-
 abc_H() { git log -n1 --pretty=%H "$1"; }
 abc_h() { git log -n1 --pretty=%h "$1"; }
 abc_rev_verify() { git rev-parse --verify -q "$1" >/dev/null; }
@@ -56,6 +54,9 @@ abc_is_ancestor() { git merge-base --is-ancestor "$1" "$2"; } # is "$1" an ances
 abc_commit_in_range() { ! abc_is_ancestor "$1" "$2" && abc_is_ancestor "$1" "$3"; }
 abc_patch_id() { local commit=$1 id; read -r id commit <<<"$(git show "$1" | git patch-id --stable)"; echo "$id"; }
 abc_is_cherry() { test "$(abc_patch_id "$1")" = "$(abc_patch_id "$2")"; }
+
+unset abc_merge_base
+abc_set_merge_base() { abc_merge_base=$(abc_h "$(git merge-base "$1" "$2")"); }
 
 #
 # Input parsing and validation
@@ -192,7 +193,7 @@ abc_set_revisions()
 	fi
 
 	if [[ "$(git config --get --type bool core.commitGraph)" == true ]]; then
-		abc_merge_base=$(abc_h "$(git merge-base "$ABC_UPSTREAM" "$ABC_DOWNSTREAM")")
+		abc_set_merge_base "$ABC_UPSTREAM" "$ABC_DOWNSTREAM"
 	else
 		warn "core.commitGraph is not enabled. Disabling commit range checks."
 	fi
@@ -263,6 +264,14 @@ abc_set_flag()
 
 abc_get_flag() { git notes show "$1" 2>/dev/null; }
 abc_is_downstream_only() { git notes show "$1" 2>/dev/null | grep -q ABC_ONLY_DOWNSTREAM; }
+
+abc_in_base()
+{
+	local commit=$1
+	[[ -z $ABC_UPSTREAM || -z $ABC_DOWNSTREAM ]] && abc_set_revisions
+	[[ -z $abc_merge_base ]] && abc_set_merge_base "$ABC_UPSTREAM" "$ABC_DOWNSTREAM"
+	abc_is_ancestor "$commit" "$abc_merge_base"
+}
 
 abc_flag_get_upstream()
 {
@@ -552,6 +561,12 @@ abc_get_upstream()
 	abc_is_downstream_only "$commit" && die "'$commit' is downstream-only"
 
 	abc_set_revisions
+
+	if abc_in_base "$commit"; then
+		echo "'$commit' is a shared base commit"
+		return
+	fi
+
 	abc_commit_range_check --die 'downstream' "$commit"
 
 	upstream=$(abc_get_upstream_nocheck "$commit") || die "No upstream for '$commit' found"
@@ -594,6 +609,12 @@ abc_get_downstream()
 	abc_rev_verify "$commit^{commit}" || die_error "'$commit' is not a valid commit"
 
 	abc_set_revisions
+
+	if abc_in_base "$commit"; then
+		echo "'$commit' is a shared base commit"
+		return
+	fi
+
 	abc_commit_range_check --die 'upstream' "$commit"
 
 	downstream=$(abc_get_downstream_nocheck "$commit") || die "No downstream for '$commit' found"
