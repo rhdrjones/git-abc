@@ -71,6 +71,11 @@ Workflow
       $ git config abc.downstream downstream/master
       $ git config abc.upstream upstream/master
 
+    To increase the speed of git-abc commands, it's recommended to enable
+    core.commitGraph (see git-config(1) and git document
+    technical/commit-graph.txt).  Also, don't forget to create the initial
+    commit-graph file with 'git commit-graph write'.
+
 2.  If necessary, override the regular expressions used to identify
     interesting upstream commits and/or the upstream links in downstream
     commits.  By default, an interesting upstream commit is one that has

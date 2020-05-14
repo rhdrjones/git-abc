@@ -73,7 +73,7 @@ ABC_DEFAULT_NAMESPACE="git-abc"
 ABC_DEFAULT_TODO_PATH="$GIT_DIR/git-abc-todo"
 ABC_DEFAULT_HOOK_PATH="$GIT_DIR/hooks"
 ABC_DEFAULT_HUNT_CHERRIES="$(abc_bool 'false')"
-ABC_DEFAULT_RANGE_CHECKS="$(abc_bool 'true')"
+ABC_DEFAULT_RANGE_CHECKS="$(git config --get --type bool core.commitGraph || abc_bool 'false')"
 
 # Set the parameters that can't / don't need to be validated. Environment overrides git config.
 : "${ABC_SHOULD_HIGHLIGHT:=$(git config --get abc.should-highlight)}"
@@ -144,6 +144,14 @@ abc_set_parameter 'ABC_RANGE_CHECKS' "$ABC_DEFAULT_RANGE_CHECKS" \
 		  'abc.range-checks' 'git config --get abc.range-checks' \
 		  'bool'
 
+abc_check_commit_graph()
+{
+	if [[ "$(git config --get --type bool core.commitGraph)" != true ]]; then
+		warn "core.commitGraph is not enabled. Range checks may be slow."
+		say "Enable with 'git config core.commitGraph true && git commit-graph write'" >&2
+	fi
+}
+
 abc_set_revisions()
 {
 	local upstream=$1 downstream=$2
@@ -192,10 +200,9 @@ abc_set_revisions()
 		exit
 	fi
 
-	if [[ "$(git config --get --type bool core.commitGraph)" == true ]]; then
+	if [[ $ABC_RANGE_CHECKS == 'true' ]]; then
+		abc_check_commit_graph
 		abc_set_merge_base "$ABC_UPSTREAM" "$ABC_DOWNSTREAM"
-	else
-		warn "core.commitGraph is not enabled. Disabling commit range checks."
 	fi
 }
 
@@ -479,7 +486,7 @@ abc_commit_range_check()
 	if [[ $range ]]; then
 		base="${range%%..*}"
 		tip="${range#*..}"
-	elif [[ $ABC_RANGE_CHECKS == 'true' && $abc_merge_base ]]; then
+	elif [[ $ABC_RANGE_CHECKS == 'true' ]]; then
 		base=$abc_merge_base
 		if [[ $stream == upstream ]]; then
 			tip=$ABC_UPSTREAM
@@ -712,23 +719,18 @@ abc_set_upstream_range()
 	fi
 
 	if [[ -z $upstream_range ]]; then
-		if [[ $range ]]; then
+		if [[ $ABC_RANGE_CHECKS = 'true' && $range ]]; then
 			abc_set_revisions
 		fi
-		if [[ $abc_merge_base ]]; then
-			upstream_base=$abc_merge_base
-			upstream_tip=$ABC_UPSTREAM
-		fi
+		upstream_base=$abc_merge_base
+		upstream_tip=$ABC_UPSTREAM
 	else
 		abc_check_range "$upstream_range"
+		abc_check_commit_graph
 		upstream_base="${upstream_range%%..*}"
 		upstream_tip="${upstream_range#*..}"
 		: "${upstream_base:=HEAD}"
 		: "${upstream_tip:=HEAD}"
-
-		if [[ "$(git config --get --type bool core.commitGraph)" != true ]]; then
-			warn "core.commitGraph is not enabled. Range checking upstream links will be slow."
-		fi
 	fi
 
 	range="${downstream_base}..${downstream_tip}"
@@ -860,13 +862,13 @@ abc_flag()
 		shift
 	fi
 
-	abc_set_revisions
+	[[ $ABC_RANGE_CHECKS == 'true' ]] && abc_set_revisions
 
 	for commit in "$@"; do
 		if ! abc_rev_verify "${commit}^{commit}"; then
 			echo "Error: '$commit' is not a valid commit" >&2
 			continue
-		elif [[ $abc_merge_base ]] && ! abc_commit_in_range "$commit" "$abc_merge_base" "$ABC_UPSTREAM"; then
+		elif [[ $ABC_RANGE_CHECKS == 'true' ]] && ! abc_commit_in_range "$commit" "$abc_merge_base" "$ABC_UPSTREAM"; then
 			echo "Error: '$commit' not in upstream range: ${abc_merge_base}..${ABC_UPSTREAM}" >&2
 			continue
 		fi

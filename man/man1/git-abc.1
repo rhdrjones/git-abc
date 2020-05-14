@@ -41,6 +41,9 @@ The <upstream>, <downstream>, and <path>... parameters may also be provided with
 When both a command line parameter and an environment variable are provided, the command line parameter takes precedence.
 .sp
 Three hooks (see HOOKS) may be used with find: abc-pre-find, abc-post-find, and abc-ignore-evil-merge.
+.sp
+To speed it up, as well as other git-abc commands, it's recommended to enable core.commitGraph (see \fBgit-config\fR(1) and git document technical/commit-graph.txt).
+Also, don't forget to create the initial commit-graph file with 'git commit-graph write'.
 .RE
 .PP
 list|list-fixes [<option>] [<upstream> [<downstream>]]
@@ -124,7 +127,8 @@ If <downstream-range> is not provided then it defaults to '{downstream}..',  whe
 .sp
 If <upstream-range> is provided, then range checking will be enabled, even if abc.range-checks is false (see CONFIGURATION:abc.range-checks), and each linkage will be checked against the given upstream range.
 set-upstream-range may take much more time to complete when given an upstream range.
-To speed it up, as well as other git-abc commands, it's recommended to enable core.commitGraph (see \fBgit-config\fR(1) and git document technical/commit-graph.txt)
+To speed it up, as well as other git-abc commands, it's recommended to enable core.commitGraph (see \fBgit-config\fR(1) and git document technical/commit-graph.txt).
+Also, don't forget to create the initial commit-graph file with 'git commit-graph write'.
 .sp
 When true, abc.hunt-cherries (see CONFIGURATION:abc.hunt-cherries) will enable cherry-pick searching, just as it does for the 'find' command.
 However 'find' should be run first with the upstream that should be searched for the potential cherry-picks.
@@ -281,9 +285,9 @@ abc.range-checks
 .RS 4
 Ensure commits are members of their expected commit ranges (i.e. they're on the upstream or downstream branches).
 Error out on unexpected user input and warn on unexpected upstream links.
-This is enabled ('true') by default, but it's a bit expensive to do.
-When speed is more important than the checks, then the checks may be disabled by setting this config to 'false'.
-The range checks will also be disabled, regardless of the value of this config, when core.commitGraph (see \fBgit-config\fR(1) and git document technical/commit-graph.txt) is not enabled.
+This defaults to enabled ('true') when core.commitGraph (see \fBgit-config\fR(1) and git document technical/commit-graph.txt) is enabled, and defaults to 'false' otherwise.
+These checks are a bit expensive to do.
+When speed is more important, the checks may be disabled by setting this config to 'false'.
 .sp
 The ABC_RANGE_CHECKS environment variable may be used to override this config.
 .RE
