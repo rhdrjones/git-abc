@@ -707,6 +707,8 @@ abc_set_upstream_range()
 		abc_check_range "$range"
 		downstream_base="${range%%..*}"
 		downstream_tip="${range#*..}"
+		: "${downstream_base:=HEAD}"
+		: "${downstream_tip:=HEAD}"
 	fi
 
 	if [[ -z $upstream_range ]]; then
@@ -721,6 +723,8 @@ abc_set_upstream_range()
 		abc_check_range "$upstream_range"
 		upstream_base="${upstream_range%%..*}"
 		upstream_tip="${upstream_range#*..}"
+		: "${upstream_base:=HEAD}"
+		: "${upstream_tip:=HEAD}"
 
 		if [[ "$(git config --get --type bool core.commitGraph)" != true ]]; then
 			warn "core.commitGraph is not enabled. Range checking upstream links will be slow."
@@ -746,6 +750,7 @@ abc_set_upstream_range()
 
 	if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
 		if [[ -z $upstream_range ]]; then
+			[[ -z $ABC_UPSTREAM || -z $ABC_DOWNSTREAM ]] && abc_set_revisions
 			upstream_range="${ABC_DOWNSTREAM}..${ABC_UPSTREAM}"
 		fi
 		abc_hunt_cherries "$range" "$upstream_range"
