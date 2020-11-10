@@ -266,7 +266,7 @@ If there's a match, then the match is used for the upstream link.
 The default is:
 .sp
 .nf
-  '%b:^commit ([0-9a-f]{40})$,,%b:^\\(cherry picked from commit ([0-9a-f]{40})\\)$'
+  '%b:^\\(cherry picked from commit ([0-9a-f]{40})\\)$,,%b:^commit ([0-9a-f]{40})$'
 .fi
 .sp
 The ABC_UPSTREAM_LINK environment variable may be used to override this config.
