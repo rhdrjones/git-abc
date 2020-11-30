@@ -263,6 +263,7 @@ Double comma (,,) separated list of <place-holders>:<regex> pairs used to identi
 <place-holders> are git pretty format place holders (see \fBgit-log\fR(1) PRETTY FORMATS).
 When looking for a corresponding upstream commit, the downstream commit will have each set of place holders checked with its extended regular expression <regex>.
 If there's a match, then the match is used for the upstream link.
+The upstream link must be the first match, i.e. '\1'.
 The default is:
 .sp
 .nf

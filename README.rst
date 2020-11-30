@@ -95,7 +95,7 @@ Workflow
     expressions are::
 
       abc.should-highlight = %s:fix|Fix|FIX|Revert,,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]
-      abc.upstream-link = %b:^\\(cherry picked from commit ([0-9a-f]{40})\\)$,,%b:^commit ([0-9a-f]{40})$
+      abc.upstream-link = %b:^\(cherry picked from commit ([0-9a-f]{40})\)$,,%b:^commit ([0-9a-f]{40})$
 
 3.  Determine which paths should be used to filter backport candidates,
     if not all files of the repo need to be considered.  The example
