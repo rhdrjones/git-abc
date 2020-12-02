@@ -405,6 +405,25 @@ abc_reset()
 	git notes prune
 }
 
+abc_split_phs_re_pair()
+{
+	local _p=$1 _phs=$2 _re=$3 __phs __re _b
+
+	[[ ${_p:1:1} == \( ]] && _b=')'
+	__phs="${_p%%${_b}:*}${_b}" __re="${_p#*${_b}:}"
+
+	if [[ $__phs =~ trailers ]]; then
+		if [[ $__phs =~ trailers: ]]; then
+			__phs=${__phs/)/,}
+		else
+			__phs=${__phs/)/:}
+		fi
+		__phs="${__phs}unfold,valueonly)"
+	fi
+
+	eval "$_phs=\"$__phs\" $_re=\"$__re\""
+}
+
 abc_should_highlight()
 {
 	local commit=$1 c="${ABC_SHOULD_HIGHLIGHT},,"
@@ -412,7 +431,9 @@ abc_should_highlight()
 
 	while [[ "$c" ]]; do
 		p="${c%%,,*}" c="${c#*,,}"
-		phs="${p%%:*}" re="${p#*:}"
+
+		abc_split_phs_re_pair "$p" phs re
+
 		if git log -n1 --pretty="$phs" "$commit" | grep -E -q "$re"; then
 			return 0
 		fi
@@ -524,7 +545,8 @@ abc_get_upstream_link()
 
 	while [[ "$c" ]]; do
 		p="${c%%,,*}" c="${c#*,,}"
-		phs="${p%%:*}" re="${p#*:}"
+
+		abc_split_phs_re_pair "$p" phs re
 
 		readarray -t matches < <(git log -n1 --pretty="$phs" "$commit" | abc_extract_commits "$re")
 
