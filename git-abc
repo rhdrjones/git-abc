@@ -47,8 +47,13 @@ set_reflog_action abc
 die_error() { echo -n "Error: " >&2; die "$1"; }
 warn() { say "Warning: $1" >&2; }
 
-abc_H() { git log -n1 --pretty=%H "$1"; }
-abc_h() { git log -n1 --pretty=%h "$1"; }
+abc_abbrev_min=7
+if ! abc_abbrev="$(git config --get --type int core.abbrev)"; then
+	abc_abbrev=$abc_abbrev_min
+fi
+
+abc_H() { if (( ${#1} == 40 )); then echo "$1"; else git log -n1 --pretty=%H "$1"; fi; }
+abc_h() { if (( ${#1} >= abc_abbrev )); then echo "${1:0:$abc_abbrev}"; else git log -n1 --pretty=%h "$1"; fi; }
 abc_rev_verify() { git rev-parse --verify -q "$1" >/dev/null; }
 abc_is_ancestor() { git merge-base --is-ancestor "$1" "$2"; } # is "$1" an ancestor of "$2"
 abc_commit_in_range() { ! abc_is_ancestor "$1" "$2" && abc_is_ancestor "$1" "$3"; }
@@ -607,7 +612,7 @@ abc_get_downstream_nocheck()
 				return 0
 			fi
 		fi
-	done < <(git log --pretty=%H --grep "${commit:0:8}" "$ABC_UPSTREAM..$ABC_DOWNSTREAM")
+	done < <(git log --pretty=%H --grep "${commit:0:$abc_abbrev_min}" "$ABC_UPSTREAM..$ABC_DOWNSTREAM")
 
 	return 1
 }
