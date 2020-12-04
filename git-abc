@@ -317,6 +317,8 @@ abc_set_link()
 	abc_set_flag "$commit" "$flag=$link"
 }
 
+abc_check_link() { [[ "$(abc_get_link "$1")" == "$2" ]]; }
+
 abc_link_cherry()
 {
 	abc_set_link 'cherrypick' "$1" "$2"
@@ -518,16 +520,11 @@ abc_extract_commit()
 	sed -E 's/'"$re"'/ABC_XXXXXX=\1/;/^ABC_XXXXXX=/!d;s/ABC_XXXXXX=//'
 }
 
-abc_get_upstream_nocheck()
+abc_get_upstream_link()
 {
 	local commit=$1 c="${ABC_UPSTREAM_LINK},,"
 	local p phs re upstream
 	declare -a matches
-
-	if upstream=$(abc_get_link "$commit"); then
-		echo "$upstream"
-		return 0
-	fi
 
 	while [[ "$c" ]]; do
 		p="${c%%,,*}" c="${c#*,,}"
@@ -537,8 +534,6 @@ abc_get_upstream_nocheck()
 
 		for upstream in "${matches[@]}"; do
 			if abc_rev_verify "${upstream}^{commit}"; then
-				upstream=$(abc_H "$upstream")
-				abc_link "$(abc_H "$commit")" "$upstream"
 				echo "$upstream"
 				return 0
 			fi
@@ -565,32 +560,37 @@ abc_get_upstream()
 
 	abc_commit_range_check --die 'downstream' "$commit"
 
-	upstream=$(abc_get_upstream_nocheck "$commit") || die "No upstream for '$commit' found"
+	if upstream=$(abc_get_link "$commit"); then
+		abc_check_link "$upstream" "$(abc_H "$commit")"
+	elif upstream=$(abc_get_upstream_link "$commit"); then
+		abc_link "$(abc_H "$commit")" "$(abc_H "$upstream")"
+	else
+		die "No upstream for '$commit' found"
+	fi
 
 	abc_commit_range_check 'upstream' "$upstream"
 
 	git log -n1 --pretty='%h %s' "$upstream"
 }
 
-abc_get_downstream_nocheck()
+abc_search_for_downstream()
 {
 	local commit=$1 upstream downstream
 
-	if downstream=$(abc_get_link "$commit"); then
-		echo "$downstream"
-		return 0
-	fi
-
 	commit=$(abc_H "$commit")
+
 	while read -r downstream; do
 		if abc_is_downstream_only "$downstream"; then
 			continue
 		fi
-		if upstream=$(abc_get_upstream_nocheck "$downstream"); then
-			if [ "$upstream" = "$commit" ]; then
-				echo "$downstream"
-				return 0
-			fi
+		if upstream=$(abc_get_link "$downstream"); then
+			abc_check_link "$upstream" "$downstream"
+		elif upstream=$(abc_get_upstream_link "$downstream"); then
+			upstream=$(abc_H "$upstream")
+		fi
+		if [[ "$upstream" == "$commit" ]]; then
+			echo "$downstream"
+			return 0
 		fi
 	done < <(git log --pretty=%H --grep "${commit:0:$abc_abbrev_min}" "$ABC_UPSTREAM..$ABC_DOWNSTREAM")
 
@@ -613,7 +613,13 @@ abc_get_downstream()
 
 	abc_commit_range_check --die 'upstream' "$commit"
 
-	downstream=$(abc_get_downstream_nocheck "$commit") || die "No downstream for '$commit' found"
+	if downstream=$(abc_get_link "$commit"); then
+		abc_check_link "$downstream" "$(abc_H "$commit")"
+	elif downstream=$(abc_search_for_downstream "$commit"); then
+		abc_link "$(abc_H "$downstream")" "$(abc_H "$commit")"
+	else
+		die "No downstream for '$commit' found"
+	fi
 
 	abc_commit_range_check 'downstream' "$downstream"
 
@@ -624,12 +630,16 @@ abc_set_links()
 {
 	local commit=$1 upstream_range=$2 upstream
 
-	if upstream=$(abc_get_upstream_nocheck "$commit"); then
-		abc_commit_range_check 'upstream' "$upstream" "$upstream_range"
-		return
+	if upstream=$(abc_get_link "$commit"); then
+		abc_check_link "$upstream" "$commit"
+	elif upstream=$(abc_get_upstream_link "$commit"); then
+		upstream=$(abc_H "$upstream")
+		abc_link "$commit" "$upstream"
 	fi
 
-	if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
+	if [[ "$upstream" ]]; then
+		abc_commit_range_check 'upstream' "$upstream" "$upstream_range"
+	elif [ "$ABC_HUNT_CHERRIES" = "true" ]; then
 		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM_NEW
 	else
 		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM
