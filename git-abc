@@ -285,68 +285,48 @@ abc_in_base()
 	abc_is_ancestor "$commit" "$abc_merge_base"
 }
 
-abc_flag_get_upstream()
+abc_flag_is_link() { [[ "$1" =~ '=' ]]; }
+abc_has_link() { abc_flag_is_link "$(abc_get_flag "$1")"; }
+
+abc_get_link()
 {
-	local commit=$1 flag
-
-	flag=$(abc_get_flag "$commit")
-
-	if [[ "$flag" =~ ABC_UPSTREAM=(.*) || "$flag" =~ ABC_CHERRYPICK=(.*) ]]; then
-		echo "${BASH_REMATCH[1]}"
-		return 0
-	fi
-	return 1
+	local commit=$1 link
+	link=$(abc_get_flag "$commit") && link=${link/*=/}
+	echo "$link"
+	[[ "$link" ]]
 }
 
-abc_flag_get_downstream()
+abc_set_link()
 {
-	local commit=$1 flag
+	declare -u flag="ABC_$1"
+	declare -l stream=$1
+	local commit=$2 link=$3 old_flag old
 
-	flag=$(abc_get_flag "$commit")
+	old_flag=$(abc_get_flag "$commit")
+	old=${old_flag/*=/}
 
-	if [[ "$flag" =~ ABC_DOWNSTREAM=(.*) ]]; then
-		echo "${BASH_REMATCH[1]}"
-		return 0
-	fi
-	return 1
-}
-
-abc_check_links()
-{
-	local downstream=$1 upstream=$2 u d
-
-	if u=$(abc_flag_get_upstream "$downstream") && [ "$u" != "$upstream" ]; then
-		warn "Overwriting current upstream for '$(abc_h "$downstream")' (upstream was '$(abc_h "$u")')"
+	if abc_flag_is_link "$old_flag" && [[ "$old" != "$link" ]]; then
+		[[ "$stream" == "cherrypick" ]] && stream="upstream"
+		warn "Overwriting current $stream for '$(abc_h "$commit")' (was '$(abc_h "$old")', now '$(abc_h "$link")')"
 	fi
 
-	if d=$(abc_flag_get_downstream "$upstream") && [ "$d" != "$downstream" ]; then
-		warn "Overwriting current downstream for '$(abc_h "$upstream")' (downstream was '$(abc_h "$d")')"
+	if [[ "$flag" == ABC_UPSTREAM ]] && abc_is_cherry "$commit" "$link"; then
+		flag=ABC_CHERRYPICK
 	fi
+
+	abc_set_flag "$commit" "$flag=$link"
 }
 
 abc_link_cherry()
 {
-	local downstream=$1 upstream=$2
-
-	abc_check_links "$downstream" "$upstream"
-
-	abc_set_flag "$downstream" "ABC_CHERRYPICK=$upstream"
-	abc_set_flag "$upstream" "ABC_DOWNSTREAM=$downstream"
+	abc_set_link 'cherrypick' "$1" "$2"
+	abc_set_link 'downstream' "$2" "$1"
 }
 
 abc_link()
 {
-	local downstream=$1 upstream=$2
-
-	abc_check_links "$downstream" "$upstream"
-
-	if abc_is_cherry "$downstream" "$upstream"; then
-		abc_set_flag "$downstream" "ABC_CHERRYPICK=$upstream"
-	else
-		abc_set_flag "$downstream" "ABC_UPSTREAM=$upstream"
-	fi
-
-	abc_set_flag "$upstream" "ABC_DOWNSTREAM=$downstream"
+	abc_set_link 'upstream' "$1" "$2"
+	abc_set_link 'downstream' "$2" "$1"
 }
 
 #
@@ -544,7 +524,7 @@ abc_get_upstream_nocheck()
 	local p phs re upstream
 	declare -a matches
 
-	if upstream=$(abc_flag_get_upstream "$commit"); then
+	if upstream=$(abc_get_link "$commit"); then
 		echo "$upstream"
 		return 0
 	fi
@@ -596,7 +576,7 @@ abc_get_downstream_nocheck()
 {
 	local commit=$1 upstream downstream
 
-	if downstream=$(abc_flag_get_downstream "$commit"); then
+	if downstream=$(abc_get_link "$commit"); then
 		echo "$downstream"
 		return 0
 	fi
@@ -882,7 +862,7 @@ abc_flag()
 			continue
 		fi
 
-		if downstream=$(abc_flag_get_downstream "$commit"); then
+		if downstream=$(abc_get_link "$commit"); then
 			warn "Overwriting current downstream for '$commit' (downstream was '$(abc_h "$downstream")')"
 		fi
 
