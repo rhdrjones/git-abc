@@ -83,16 +83,15 @@ Workflow
     identifies a commit that it fixes using the 'Fixes:' tag (i.e. an
     interesting upstream commit is a possible fix).  Upstream links are,
     by default, any that 'git-show' or 'git-cherry-pick -x' would
-    generate.  Internally git-abc interprets the interesting commit
-    regular expressions with 'egrep' and the upstream link regular
-    expressions with 'sed -E'.  The later requires the commit hash to be
-    the first match (meaning the regex for the hash should be in ()'s).
-    Additionally, git-abc determines where to look using git pretty format
-    place holders, e.g. %s for subject and %b for body (see git-log(1)
-    PRETTY FORMATS).  More than one place to look, or more than one
-    expression per place, may be specified with a double comma (,,)
-    separated list of <place-holders>:<regex> pairs.  The default
-    expressions are::
+    generate.  Internally, git-abc interprets the interesting commit
+    and upstream link regular expressions as grep/sed EREs (using -E).
+    The later requires the commit hash to be the first match (meaning the
+    regex for the hash should be in ()'s).  Additionally, git-abc
+    determines where to look using git pretty format place holders, e.g.
+    %s for subject and %b for body (see git-log(1) PRETTY FORMATS).  More
+    than one place to look, or more than one expression per place, may be
+    specified with a double comma (,,) separated list of
+    <place-holders>:<regex> pairs.  The default expressions are::
 
       abc.should-highlight = %s:fix|Fix|FIX|Revert,,%b:^[Cc][Cc]: *<?[Ss]table[@ ]|^[Ff]ixes: *[0-9a-f]
       abc.upstream-link = %b:^\(cherry picked from commit ([0-9a-f]{40})\)$,,%b:^commit ([0-9a-f]{40})$

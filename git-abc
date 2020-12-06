@@ -513,12 +513,8 @@ abc_set_upstream()
 	abc_link "$(abc_H "$downstream")" "$(abc_H "$upstream")"
 }
 
-abc_extract_commit()
-{
-	# Extract all commit hashes from stdin matching the extended regex
-	local re=$1
-	sed -E 's/'"$re"'/ABC_XXXXXX=\1/;/^ABC_XXXXXX=/!d;s/ABC_XXXXXX=//'
-}
+# Extract all commit hashes from stdin matching the extended regex
+abc_extract_commits() { grep -E -o "$1" | sed -E "s/$1/\1/"; }
 
 abc_get_upstream_link()
 {
@@ -530,7 +526,7 @@ abc_get_upstream_link()
 		p="${c%%,,*}" c="${c#*,,}"
 		phs="${p%%:*}" re="${p#*:}"
 
-		readarray -t matches < <(git log -n1 --pretty="$phs" "$commit" | abc_extract_commit "$re")
+		readarray -t matches < <(git log -n1 --pretty="$phs" "$commit" | abc_extract_commits "$re")
 
 		for upstream in "${matches[@]}"; do
 			if abc_rev_verify "${upstream}^{commit}"; then
