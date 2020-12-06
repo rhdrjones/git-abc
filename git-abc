@@ -266,6 +266,22 @@ abc_export_config()
 # abc flag functions
 #
 
+abc_flag_str()
+{
+	case "$1" in
+	ABC_BACKPORT_PENDING)		echo 'pending';;
+	ABC_BACKPORT_CANDIDATE)		echo 'candidate';;
+	ABC_BACKPORT_XCANDIDATE)	echo 'xcandidate';;
+	ABC_DEFERRED_CANDIDATE)		echo 'deferred-candidate';;
+	ABC_DONT_WANT)			echo 'rejected';;
+	ABC_ONLY_DOWNSTREAM)		echo 'downstream-only';;
+	ABC_DOWNSTREAM=*)		echo 'backported';;
+	ABC_UPSTREAM=*)			echo 'downstream';;
+	ABC_CHERRYPICK=*)		echo 'downstream';;
+	esac
+}
+abc_get_flag_str() { abc_flag_str "$1" "$(abc_get_flag "$commit")"; }
+
 abc_set_flag()
 {
 	# All flags are mutually exclusive, so we always overwrite whatever
@@ -352,6 +368,7 @@ abc_import()
 		case "$flag" in
 		BP) abc_set_flag "$commit" ABC_BACKPORT_PENDING;;
 		BC) abc_set_flag "$commit" ABC_BACKPORT_CANDIDATE;;
+		XC) abc_set_flag "$commit" ABC_BACKPORT_XCANDIDATE;;
 		DC) abc_set_flag "$commit" ABC_DEFERRED_CANDIDATE;;
 		DW) abc_set_flag "$commit" ABC_DONT_WANT;;
 		DO) abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM;;
@@ -369,14 +386,15 @@ abc_export()
 	git notes | while read -r note commit; do
 		flag=$(git show "$note")
 		case "$flag" in
-		ABC_BACKPORT_PENDING)	echo "BP $commit";;
-		ABC_BACKPORT_CANDIDATE)	echo "BC $commit";;
-		ABC_DEFERRED_CANDIDATE)	echo "DC $commit";;
-		ABC_DONT_WANT)		echo "DW $commit";;
-		ABC_ONLY_DOWNSTREAM)	echo "DO $commit";;
-		ABC_DOWNSTREAM=*)	echo "US $commit ${flag#*=}";;
-		ABC_UPSTREAM=*)		echo "DS $commit ${flag#*=}";;
-		ABC_CHERRYPICK=*)	echo "CP $commit ${flag#*=}";;
+		ABC_BACKPORT_PENDING)		echo "BP $commit";;
+		ABC_BACKPORT_CANDIDATE)		echo "BC $commit";;
+		ABC_BACKPORT_XCANDIDATE)	echo "XC $commit";;
+		ABC_DEFERRED_CANDIDATE)		echo "DC $commit";;
+		ABC_DONT_WANT)			echo "DW $commit";;
+		ABC_ONLY_DOWNSTREAM)		echo "DO $commit";;
+		ABC_DOWNSTREAM=*)		echo "US $commit ${flag#*=}";;
+		ABC_UPSTREAM=*)			echo "DS $commit ${flag#*=}";;
+		ABC_CHERRYPICK=*)		echo "CP $commit ${flag#*=}";;
 		esac
 	done
 }
@@ -461,7 +479,8 @@ abc_list()
 	abc_get_limits "$@"
 
 	case "$list" in
-	--candidates)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_BACKPORT_CANDIDATE;;
+	--candidates)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag='ABC_BACKPORT_CANDIDATE\|^ABC_BACKPORT_XCANDIDATE';;
+	--xcandidates)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_BACKPORT_XCANDIDATE;;
 	--deferred)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_DEFERRED_CANDIDATE;;
 	--pending)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_BACKPORT_PENDING;;
 	--rejected)			range="$ABC_DOWNSTREAM..$ABC_UPSTREAM" flag=ABC_DONT_WANT;;
@@ -699,7 +718,7 @@ abc_hunt_cherries()
 		return
 	fi
 
-	git log --notes --pretty=%H -E --grep '^(ABC_BACKPORT_CANDIDATE|ABC_DEFERRED_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT)' "$upstream_range" |
+	git log --notes --pretty=%H -E --grep '^(ABC_BACKPORT_CANDIDATE|ABC_BACKPORT_XCANDIDATE|ABC_DEFERRED_CANDIDATE|ABC_BACKPORT_PENDING|ABC_DONT_WANT)' "$upstream_range" |
 	while read -r upstream; do
 		uid=$(abc_patch_id "$upstream")
 		for commit in "${new_downstream_only[@]}"; do
@@ -871,7 +890,7 @@ abc_find()
 
 abc_flag()
 {
-	local flag=$1 commit downstream
+	local flag=$1 commit current
 	shift
 
 	case "$flag" in
@@ -898,8 +917,13 @@ abc_flag()
 			continue
 		fi
 
-		if downstream=$(abc_get_link "$commit"); then
-			warn "Overwriting current downstream for '$commit' (downstream was '$(abc_h "$downstream")')"
+		if current=$(abc_get_flag "$commit"); then
+			if [[ "$current" =~ ABC_DOWNSTREAM ]]; then
+				current=${current/*=/}
+				warn "Overwriting current downstream for '$commit' (was '$(abc_h "$current")', now '$(abc_flag_str "$flag")')"
+			else
+				warn "Overwriting current flag for '$commit' (was '$(abc_flag_str "$current")', now '$(abc_flag_str "$flag")')"
+			fi
 		fi
 
 		abc_set_flag "$commit" "$flag"
@@ -936,7 +960,7 @@ abc_select()
 	git log --notes --pretty='%h %s' --grep=^ABC_ "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
 	while read -r commit subject; do
 		flag=$(abc_get_flag "$commit")
-		if [[ "$flag" == ABC_BACKPORT_CANDIDATE ||
+		if [[ "$flag" == ABC_BACKPORT_CANDIDATE || "$flag" == ABC_BACKPORT_XCANDIDATE ||
 		      ( "$show_deferred" && "$flag" == ABC_DEFERRED_CANDIDATE ) ]]; then
 			if abc_should_highlight "$commit"; then
 				echo "VIEW $commit $subject" >> "$todo"
