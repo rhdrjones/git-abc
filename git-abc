@@ -671,29 +671,20 @@ abc_get_downstream()
 	git log -n1 --pretty='%h %s' "$downstream"
 }
 
-abc_set_links()
+abc_set_downstream_only()
 {
-	local commit=$1 upstream_range=$2 upstream
+	commit=$1
 
-	if upstream=$(abc_get_link "$commit"); then
-		abc_check_link "$upstream" "$commit"
-	elif upstream=$(abc_get_upstream_link "$commit"); then
-		upstream=$(abc_H "$upstream")
-		abc_link "$commit" "$upstream"
-	fi
-
-	if [[ "$upstream" ]]; then
-		abc_commit_range_check 'upstream' "$upstream" "$upstream_range"
-	elif [ "$ABC_HUNT_CHERRIES" = "true" ]; then
-		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM_NEW
+	if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
+		abc_set_flag "$commit" ABC_NEW_ONLY_DOWNSTREAM
 	else
 		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM
 	fi
 }
 
 # When ABC_HUNT_CHERRIES is true, abc_hunt_cherries() should be called after
-# abc_set_links() to ensure all ABC_ONLY_DOWNSTREAM_NEW flags get converted
-# to ABC_ONLY_DOWNSTREAM
+# setting new downstream-only commits to ensure all ABC_NEW_ONLY_DOWNSTREAM
+# flags get converted to ABC_ONLY_DOWNSTREAM
 abc_hunt_cherries()
 {
 	local range=$1 upstream_range=$2 commit upstream did uid
@@ -712,7 +703,7 @@ abc_hunt_cherries()
 		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM
 		new_downstream_only+=("$commit")
 		downstream_patchid[$commit]=$(abc_patch_id "$commit")
-	done < <(git log --notes --pretty=%H --grep '^ABC_ONLY_DOWNSTREAM_NEW' "$range")
+	done < <(git log --notes --pretty=%H --grep '^ABC_NEW_ONLY_DOWNSTREAM' "$range")
 
 	if (( ${#new_downstream_only[@]} == 0 )); then
 		return
@@ -747,7 +738,7 @@ abc_check_range()
 
 abc_set_upstream_range()
 {
-	local range=$1 upstream_range=$2 commit
+	local range=$1 upstream_range=$2 commit upstream
 	local downstream_base downstream_tip upstream_base upstream_tip
 
 	if [[ -z $range ]]; then
@@ -788,7 +779,19 @@ abc_set_upstream_range()
 	fi
 
 	git log --reverse --pretty=%H "$range" | while read -r commit; do
-		abc_set_links "$commit" "$upstream_range"
+		if upstream=$(abc_get_link "$commit"); then
+			abc_check_link "$upstream" "$commit"
+		elif upstream=$(abc_get_upstream_link "$commit"); then
+			upstream=$(abc_H "$upstream")
+			abc_link "$commit" "$upstream"
+		fi
+
+		if [[ "$upstream" ]]; then
+			abc_commit_range_check 'upstream' "$upstream" "$upstream_range"
+		else
+			abc_set_downstream_only "$commit"
+		fi
+
 		if [ "$ABC_HUNT_CHERRIES" != "true" ] && abc_is_downstream_only "$commit"; then
 			say "'$(abc_h "$commit")' is downstream-only" >&2
 		fi
@@ -851,7 +854,7 @@ abc_evil_merge()
 
 abc_find()
 {
-	local commit parents
+	local commit upstream parents
 
 	abc_get_limits "$@"
 	abc_export_config
@@ -861,11 +864,23 @@ abc_find()
 		return
 	fi
 
+	#
+	# Link new downstream commits and double check downstream-only commits
+	#
 	git log --notes --no-merges --pretty=%H "${ABC_UPSTREAM}..${ABC_DOWNSTREAM}" --invert-grep --grep '^ABC_UPSTREAM\|^ABC_CHERRYPICK' -- $ABC_PATHS |
 	while read -r commit; do
-		abc_set_links "$commit"
+		if upstream=$(abc_get_upstream_link "$commit"); then
+			upstream=$(abc_H "$upstream")
+			abc_link "$commit" "$upstream"
+			abc_commit_range_check 'upstream' "$upstream"
+		else
+			abc_set_downstream_only "$commit"
+		fi
 	done
 
+	#
+	# Flag new upstream commits
+	#
 	git log --notes --parents --pretty='%H %P' --invert-grep --grep ^ABC_ "${ABC_DOWNSTREAM}..${ABC_UPSTREAM}" -- $ABC_PATHS |
 	while read -r commit parents; do
 		# If this commit hasn't already been backported or flagged in some way, then
