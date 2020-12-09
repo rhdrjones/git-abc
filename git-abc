@@ -431,7 +431,6 @@ abc_should_highlight()
 
 	while [[ "$c" ]]; do
 		p="${c%%,,*}" c="${c#*,,}"
-
 		abc_split_phs_re_pair "$p" phs re
 
 		if git log -n1 --pretty="$phs" "$commit" | grep -E -q "$re"; then
@@ -534,29 +533,38 @@ abc_set_upstream()
 	abc_link "$(abc_H "$downstream")" "$(abc_H "$upstream")"
 }
 
-# Extract all commit hashes from stdin matching the extended regex
-abc_extract_commits() { grep -E -o "$1" | sed -E "s/$1/\1/"; }
-
-abc_get_upstream_link()
+#
+# Get each commit referenced by a given commit using a set of phs-re pairs.
+#
+abc_extract_commits()
 {
-	local commit=$1 c="${ABC_UPSTREAM_LINK},,"
-	local p phs re upstream
+	local commit=$1 c="${2},,"
+	local p phs re m
 	declare -a matches
 
 	while [[ "$c" ]]; do
 		p="${c%%,,*}" c="${c#*,,}"
-
 		abc_split_phs_re_pair "$p" phs re
 
-		readarray -t matches < <(git log -n1 --pretty="$phs" "$commit" | abc_extract_commits "$re")
+		readarray -t matches < <(git log -n1 --pretty="$phs" "$commit" | grep -E -o "$re" | sed -E "s/$re/\1/")
 
-		for upstream in "${matches[@]}"; do
-			if abc_rev_verify "${upstream}^{commit}"; then
-				echo "$upstream"
-				return 0
-			fi
+		for m in "${matches[@]}"; do
+			abc_rev_verify "${m}^{commit}" 2>/dev/null && echo "$m"
 		done
 	done
+}
+
+abc_get_upstream_link()
+{
+	local commit=$1
+	declare -a links
+
+	readarray -t links < <(abc_extract_commits "$commit" "$ABC_UPSTREAM_LINK")
+
+	if (( ${#links[@]} > 0 )); then
+		echo "${links[0]}"
+		return 0
+	fi
 
 	return 1
 }
