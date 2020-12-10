@@ -58,7 +58,7 @@ abc_rev_verify() { git rev-parse --verify -q "$1" >/dev/null; }
 abc_is_ancestor() { git merge-base --is-ancestor "$1" "$2"; } # is "$1" an ancestor of "$2"
 abc_commit_in_range() { ! abc_is_ancestor "$1" "$2" && abc_is_ancestor "$1" "$3"; }
 abc_patch_id() { local commit=$1 id; read -r id commit <<<"$(git show "$1" | git patch-id --stable)"; echo "$id"; }
-abc_is_cherry() { test "$(abc_patch_id "$1")" = "$(abc_patch_id "$2")"; }
+abc_is_cherry() { [[ "$(abc_patch_id "$1")" == "$(abc_patch_id "$2")" ]]; }
 
 unset abc_merge_base
 abc_set_merge_base() { abc_merge_base=$(abc_h "$(git merge-base "$1" "$2")"); }
@@ -70,7 +70,7 @@ abc_set_merge_base() { abc_merge_base=$(abc_h "$(git merge-base "$1" "$2")"); }
 abc_bool() { git -c abc.not-a-config="$1" config --get --type bool abc.not-a-config 2>/dev/null; }
 
 abc_color="$(abc_bool 'false')"
-[ -t 1 ] && abc_color=$(git config --get-colorbool color.ui 'true')
+test -t 1 && abc_color=$(git config --get-colorbool color.ui 'true')
 
 ABC_DEFAULT_SHOULD_HIGHLIGHT="%s:[Ff]ix|FIX|^Revert ,,%(trailers:key=Cc):^<?[Ss]table\>,,%(trailers:key=Fixes,key=Fix):."
 ABC_DEFAULT_UPSTREAM_LINK="%b:^\(cherry picked from commit ([0-9a-f]{40})\)$,,%b:^commit ([0-9a-f]{40})$"
@@ -100,24 +100,24 @@ abc_set_parameter()
 
 	unset abc_parameter
 
-	if [ -n "${!param_env}" ]; then
+	if [[ "${!param_env}" ]]; then
 		abc_parameter="$param_env='${!param_env}'"
-	elif [ -n "$param_git" ] && $git_config >&/dev/null; then
+	elif [[ "$param_git" ]] && $git_config >&/dev/null; then
 		eval "$param_env=$($git_config)"
 		abc_parameter="$param_git='${!param_env}'"
-		if [ "$type" = 'bool' ] && [ -z "${!param_env}" ]; then
+		if [[ "$type" == 'bool' ]] && [[ ! "${!param_env}" ]]; then
 			eval "$param_env=$(git config --get --type bool "$param_git")"
 			return
 		fi
 	fi
 
-	if test -v abc_parameter && [ "$type" = 'bool' ]; then
+	if test -v abc_parameter && [[ "$type" == 'bool' ]]; then
 		if ! abc_bool "${!param_env}" >&/dev/null; then
 			die_error "$abc_parameter is not boolean"
 		else
 			eval "$param_env=$(abc_bool "${!param_env}")"
 		fi
-	elif ! test -v abc_parameter && [ -n "$defval" ]; then
+	elif ! test -v abc_parameter && [[ "$defval" ]]; then
 		eval "$param_env=$defval"
 		abc_parameter="'$defval'"
 	fi
@@ -125,19 +125,19 @@ abc_set_parameter()
 
 abc_set_parameter 'ABC_NAMESPACE' "$ABC_DEFAULT_NAMESPACE" \
 		  'abc.namespace' 'git config --get abc.namespace'
-if [[ "$ABC_NAMESPACE" =~ [[:blank:]] || "$ABC_NAMESPACE" =~ / ]]; then
+if [[ "$ABC_NAMESPACE" =~ [[:blank:]] || "$ABC_NAMESPACE" =~ '/' ]]; then
 	die_error "$abc_parameter may not contain spaces or '/'"
 fi
 
 abc_set_parameter 'ABC_TODO_PATH' "$ABC_DEFAULT_TODO_PATH" \
 		  'abc.todo-path' 'git config --get --type path abc.todo-path'
-if [ -e "$ABC_TODO_PATH" ] && [ ! -d "$ABC_TODO_PATH" ]; then
+if test -e "$ABC_TODO_PATH" && test ! -d "$ABC_TODO_PATH"; then
 	die_error "$abc_parameter is not a directory"
 fi
 
 abc_set_parameter 'ABC_HOOK_PATH' "$ABC_DEFAULT_HOOK_PATH" \
 		  'abc.hook-path' 'git config --get --type path abc.hook-path'
-if [ -e "$ABC_HOOK_PATH" ] && [ ! -d "$ABC_HOOK_PATH" ]; then
+if test -e "$ABC_HOOK_PATH" && test ! -d "$ABC_HOOK_PATH"; then
 	die_error "$abc_parameter is not a directory"
 fi
 
@@ -151,7 +151,7 @@ abc_set_parameter 'ABC_RANGE_CHECKS' "$ABC_DEFAULT_RANGE_CHECKS" \
 
 abc_check_commit_graph()
 {
-	if [[ "$(git config --get --type bool core.commitGraph)" != true ]]; then
+	if [[ "$(git config --get --type bool core.commitGraph)" != 'true' ]]; then
 		warn "core.commitGraph is not enabled. Range checks may be slow."
 		say "Enable with 'git config core.commitGraph true && git commit-graph write'" >&2
 	fi
@@ -163,12 +163,12 @@ abc_set_revisions()
 	local upstream_parameter downstream_parameter
 	local branch
 
-	if [[ -z $upstream ]]; then
+	if [[ ! "$upstream" ]]; then
 		abc_set_parameter 'ABC_UPSTREAM' '' \
 				  'abc.upstream' 'git config --get abc.upstream'
-		if [[ -n $ABC_UPSTREAM ]] && ! abc_rev_verify "$ABC_UPSTREAM"; then
+		if [[ "$ABC_UPSTREAM" ]] && ! abc_rev_verify "$ABC_UPSTREAM"; then
 			die_error "$abc_parameter is not a valid revision"
-		elif [[ -n $ABC_UPSTREAM ]]; then
+		elif [[ "$ABC_UPSTREAM" ]]; then
 			upstream_parameter=$abc_parameter
 		fi
 	else
@@ -176,7 +176,7 @@ abc_set_revisions()
 		upstream_parameter="'$upstream'"
 	fi
 
-	if [[ -z $downstream ]]; then
+	if [[ ! "$downstream" ]]; then
 		abc_set_parameter 'ABC_DOWNSTREAM' 'HEAD' \
 				  'abc.downstream' 'git config --get abc.downstream'
 		if ! abc_rev_verify "$ABC_DOWNSTREAM"; then
@@ -188,8 +188,8 @@ abc_set_revisions()
 		downstream_parameter="'$downstream'"
 	fi
 
-	if [[ -z $ABC_UPSTREAM ]]; then
-		if [[ $(git branch --contains "$ABC_DOWNSTREAM" | wc -l) != 1 ]]; then
+	if [[ ! "$ABC_UPSTREAM" ]]; then
+		if (( "$(git branch --contains "$ABC_DOWNSTREAM" | wc -l)" != 1 )); then
 			# No branch or too many branches to guess from. We can't guess.
 			die "Can't guess upstream from $downstream_parameter. Please specify."
 		fi
@@ -205,7 +205,7 @@ abc_set_revisions()
 		exit
 	fi
 
-	if [[ $ABC_RANGE_CHECKS == 'true' ]]; then
+	if [[ "$ABC_RANGE_CHECKS" == 'true' ]]; then
 		abc_check_commit_graph
 		abc_set_merge_base "$ABC_UPSTREAM" "$ABC_DOWNSTREAM"
 	fi
@@ -216,22 +216,22 @@ abc_get_limits()
 {
 	local upstream downstream
 
-	if [[ -n $1 ]] && [[ $1 != -- ]] && abc_rev_verify "$1"; then
+	if [[ "$1" ]] && [[ "$1" != '--' ]] && abc_rev_verify "$1"; then
 		upstream=$1
 		shift
-		if [[ -n $1 ]] && [[ $1 != -- ]] && abc_rev_verify "$1"; then
+		if [[ "$1" ]] && [[ "$1" != '--' ]] && abc_rev_verify "$1"; then
 			downstream=$1
 			shift
-		elif [[ $2 == -- ]]; then
+		elif [[ "$2" == '--' ]]; then
 			die_error "'$1' is not a valid downstream revision"
 		fi
-	elif [[ $2 == -- ]] || [[ $3 == -- ]]; then
+	elif [[ "$2" == '--' ]] || [[ "$3" == '--' ]]; then
 		die_error "'$1' is not a valid upstream revision"
 	fi
-	if [[ $1 == -- ]]; then
+	if [[ "$1" == '--' ]]; then
 		shift
 	fi
-	if [[ -n $1 ]]; then
+	if [[ "$1" ]]; then
 		ABC_PATHS="$*"
 	fi
 
@@ -291,13 +291,13 @@ abc_set_flag()
 }
 
 abc_get_flag() { git notes show "$1" 2>/dev/null; }
-abc_is_downstream_only() { [[ "$(abc_get_flag "$1")" == ABC_ONLY_DOWNSTREAM ]]; }
+abc_is_downstream_only() { [[ "$(abc_get_flag "$1")" == 'ABC_ONLY_DOWNSTREAM' ]]; }
 
 abc_in_base()
 {
 	local commit=$1
-	[[ -z $ABC_UPSTREAM || -z $ABC_DOWNSTREAM ]] && abc_set_revisions
-	[[ -z $abc_merge_base ]] && abc_set_merge_base "$ABC_UPSTREAM" "$ABC_DOWNSTREAM"
+	[[ ! "$ABC_UPSTREAM" || ! "$ABC_DOWNSTREAM" ]] && abc_set_revisions
+	[[ ! "$abc_merge_base" ]] && abc_set_merge_base "$ABC_UPSTREAM" "$ABC_DOWNSTREAM"
 	abc_is_ancestor "$commit" "$abc_merge_base"
 }
 
@@ -322,11 +322,11 @@ abc_set_link()
 	old=${old_flag/*=/}
 
 	if abc_flag_is_link "$old_flag" && [[ "$old" != "$link" ]]; then
-		[[ "$stream" == "cherrypick" ]] && stream="upstream"
+		[[ "$stream" == 'cherrypick' ]] && stream="upstream"
 		warn "Overwriting current $stream for '$(abc_h "$commit")' (was '$(abc_h "$old")', now '$(abc_h "$link")')"
 	fi
 
-	if [[ "$flag" == ABC_UPSTREAM ]] && abc_is_cherry "$commit" "$link"; then
+	if [[ "$flag" == 'ABC_UPSTREAM' ]] && abc_is_cherry "$commit" "$link"; then
 		flag=ABC_CHERRYPICK
 	fi
 
@@ -355,8 +355,8 @@ abc_import()
 {
 	local fd flag commit link
 
-	if [ "$1" ]; then
-		if [ ! -f "$1" ]; then
+	if [[ "$1" ]]; then
+		if test ! -f "$1"; then
 			die_error "File '$1' not found"
 		fi
 		exec {fd}<"$1"
@@ -403,8 +403,8 @@ abc_reset()
 {
 	local ans
 
-	if [ "$1" ]; then
-		if [ "$1" = '-f' ] || [ "$1" = '--force' ]; then
+	if [[ "$1" ]]; then
+		if [[ "$1" == '-f' ]] || [[ "$1" == '--force' ]]; then
 			ans=yes
 		else
 			die_error "Unknown option '$1' passed to reset, not resetting"
@@ -414,7 +414,7 @@ abc_reset()
 		read -r -p "If so, type 'yes': " ans
 	fi
 
-	if [ "$ans" != 'yes' ]; then
+	if [[ "$ans" != 'yes' ]]; then
 		echo "Not resetting"
 		return
 	fi
@@ -427,11 +427,11 @@ abc_split_phs_re_pair()
 {
 	local _p=$1 _phs=$2 _re=$3 __phs __re _b
 
-	[[ ${_p:1:1} == \( ]] && _b=')'
+	[[ "${_p:1:1}" == '(' ]] && _b=')'
 	__phs="${_p%%${_b}:*}${_b}" __re="${_p#*${_b}:}"
 
-	if [[ $__phs =~ trailers ]]; then
-		if [[ $__phs =~ trailers: ]]; then
+	if [[ "$__phs" =~ 'trailers' ]]; then
+		if [[ "$__phs" =~ 'trailers:' ]]; then
 			__phs=${__phs/)/,}
 		else
 			__phs=${__phs/)/:}
@@ -460,7 +460,7 @@ abc_should_highlight()
 
 abc_highlight()
 {
-	if [ "$abc_color" = 'true' ]; then
+	if [[ "$abc_color" == 'true' ]]; then
 		echo -n -e "\e[33m$1\e[0m"
 	else
 		echo -n "$1"
@@ -472,7 +472,7 @@ abc_list()
 	local range flag commit subject
 	local list='--candidates'
 
-	if [[ $1 =~ ^- ]] && [ "$1" != '--' ]; then
+	if [[ "$1" =~ ^- ]] && [[ "$1" != '--' ]]; then
 		list=$1
 		shift
 	fi
@@ -497,7 +497,7 @@ abc_list()
 	while read -r commit subject; do
 		if abc_should_highlight "$commit"; then
 			echo "$(abc_highlight "$commit") $subject"
-		elif [ "$ABC_ONLY_FIXES" != 'y' ]; then
+		elif [[ "$ABC_ONLY_FIXES" != 'y' ]]; then
 			echo "$commit $subject"
 		fi
 	done
@@ -507,18 +507,18 @@ abc_commit_range_check()
 {
 	local die stream commit range base tip msg
 
-	if [[ $1 == --die ]]; then
+	if [[ "$1" == '--die' ]]; then
 		die=1; shift
 	fi
 
 	stream=$1 commit=$2 range=$3
 
-	if [[ $range ]]; then
+	if [[ "$range" ]]; then
 		base="${range%%..*}"
 		tip="${range#*..}"
-	elif [[ $ABC_RANGE_CHECKS == 'true' ]]; then
+	elif [[ "$ABC_RANGE_CHECKS" == 'true' ]]; then
 		base=$abc_merge_base
-		if [[ $stream == upstream ]]; then
+		if [[ "$stream" == 'upstream' ]]; then
 			tip=$ABC_UPSTREAM
 		else
 			tip=$ABC_DOWNSTREAM
@@ -529,7 +529,7 @@ abc_commit_range_check()
 
 	if ! abc_commit_in_range "$commit" "$base" "$tip"; then
 		msg="'$(abc_h "$commit")' not in $stream range: ${base}..${tip}"
-		if [[ $die ]]; then
+		if [[ "$die" ]]; then
 			die_error "$msg"
 		else
 			say "$msg" >&2
@@ -541,7 +541,7 @@ abc_set_upstream()
 {
 	local downstream=$1 upstream=$2 current_upstream
 
-	[[ $downstream && $upstream ]] || die_error "set-upstream requires two parameters: <downstream-commit> <upstream-commit>"
+	[[ "$downstream" && "$upstream" ]] || die_error "set-upstream requires two parameters: <downstream-commit> <upstream-commit>"
 	abc_rev_verify "${downstream}^{commit}" || die_error "'$downstream' is not a valid commit"
 	abc_rev_verify "${upstream}^{commit}" || die_error "'$upstream' is not a valid commit"
 
@@ -592,7 +592,7 @@ abc_get_upstream()
 {
 	local commit=$1 upstream
 
-	[[ $commit ]] || die_error "get-upstream requires a parameter: <downstream-commit>"
+	[[ "$commit" ]] || die_error "get-upstream requires a parameter: <downstream-commit>"
 	abc_rev_verify "${commit}^{commit}" || die_error "'$commit' is not a valid commit"
 	abc_is_downstream_only "$commit" && die "'$commit' is downstream-only"
 
@@ -646,7 +646,7 @@ abc_get_downstream()
 {
 	local commit=$1 downstream
 
-	[[ $commit ]] || die_error "get-downstream requires a parameter: <upstream-commit>"
+	[[ "$commit" ]] || die_error "get-downstream requires a parameter: <upstream-commit>"
 	abc_rev_verify "$commit^{commit}" || die_error "'$commit' is not a valid commit"
 
 	abc_set_revisions
@@ -675,7 +675,7 @@ abc_set_downstream_only()
 {
 	commit=$1
 
-	if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
+	if [[ "$ABC_HUNT_CHERRIES" == 'true' ]]; then
 		abc_set_flag "$commit" ABC_NEW_ONLY_DOWNSTREAM
 	else
 		abc_set_flag "$commit" ABC_ONLY_DOWNSTREAM
@@ -695,7 +695,7 @@ abc_hunt_cherries()
 	# likely cherry-picked from a different upstream tree, which was then later
 	# merged to the specified upstream. We can fix up these commits automatically.
 	# It's expensive to do, though, so require abc.hunt-cherries to be set true.
-	if [ "$ABC_HUNT_CHERRIES" != "true" ]; then
+	if [[ "$ABC_HUNT_CHERRIES" != 'true' ]]; then
 		return
 	fi
 
@@ -714,7 +714,7 @@ abc_hunt_cherries()
 		uid=$(abc_patch_id "$upstream")
 		for commit in "${new_downstream_only[@]}"; do
 			did=${downstream_patchid[$commit]}
-			if [ "$did" = "$uid" ]; then
+			if [[ "$did" == "$uid" ]]; then
 				abc_link_cherry "$commit" "$upstream"
 				break
 			fi
@@ -727,9 +727,9 @@ abc_check_range()
 	local range=$1
 	declare -a revs
 
-	if [[ ! $range =~ \.\. ]]; then
+	if [[ ! "$range" =~ \.\. ]]; then
 		die "fatal: no .. in range: '$range'"
-	elif [[ $range =~ \.\.\. ]]; then
+	elif [[ "$range" =~ \.\.\. ]]; then
 		die "Range ($range) cannot be a symmetric difference (...)"
 	elif ! git rev-parse "$range" >&/dev/null; then
 		die "'$range' is not a valid"
@@ -741,7 +741,7 @@ abc_set_upstream_range()
 	local range=$1 upstream_range=$2 commit upstream
 	local downstream_base downstream_tip upstream_base upstream_tip
 
-	if [[ -z $range ]]; then
+	if [[ ! "$range" ]]; then
 		abc_set_revisions
 		downstream_base=$ABC_DOWNSTREAM
 		downstream_tip='HEAD'
@@ -753,8 +753,8 @@ abc_set_upstream_range()
 		: "${downstream_tip:=HEAD}"
 	fi
 
-	if [[ -z $upstream_range ]]; then
-		if [[ $ABC_RANGE_CHECKS = 'true' && $range ]]; then
+	if [[ ! "$upstream_range" ]]; then
+		if [[ "$ABC_RANGE_CHECKS" == 'true' && "$range" ]]; then
 			abc_set_revisions
 		fi
 		upstream_base=$abc_merge_base
@@ -770,7 +770,7 @@ abc_set_upstream_range()
 
 	range="${downstream_base}..${downstream_tip}"
 
-	if [[ $upstream_base ]]; then
+	if [[ "$upstream_base" ]]; then
 		upstream_range="${upstream_base}..${upstream_tip}"
 		if abc_commit_in_range "$downstream_base" "$upstream_base" "$upstream_tip" ||
 		   abc_commit_in_range "$downstream_tip" "$upstream_base" "$upstream_tip"; then
@@ -792,14 +792,14 @@ abc_set_upstream_range()
 			abc_set_downstream_only "$commit"
 		fi
 
-		if [ "$ABC_HUNT_CHERRIES" != "true" ] && abc_is_downstream_only "$commit"; then
+		if [[ "$ABC_HUNT_CHERRIES" != 'true' ]] && abc_is_downstream_only "$commit"; then
 			say "'$(abc_h "$commit")' is downstream-only" >&2
 		fi
 	done
 
-	if [ "$ABC_HUNT_CHERRIES" = "true" ]; then
-		if [[ -z $upstream_range ]]; then
-			[[ -z $ABC_UPSTREAM || -z $ABC_DOWNSTREAM ]] && abc_set_revisions
+	if [[ "$ABC_HUNT_CHERRIES" == 'true' ]]; then
+		if [[ ! "$upstream_range" ]]; then
+			[[ ! "$ABC_UPSTREAM" || ! "$ABC_DOWNSTREAM" ]] && abc_set_revisions
 			upstream_range="${ABC_DOWNSTREAM}..${ABC_UPSTREAM}"
 		fi
 		abc_hunt_cherries "$range" "$upstream_range"
@@ -820,8 +820,8 @@ abc_evil_merge()
 	fi
 
 	while IFS= read -r line; do
-		if [[ $line =~ ^---\ [ab]/ ]]; then
-			if [[ $r || $a ]]; then
+		if [[ "$line" =~ ^---\ [ab]/ ]]; then
+			if [[ "$r" || "$a" ]]; then
 				if ! test -x "$ABC_HOOK_PATH/abc-ignore-evil-merge" ||
 				   ! "$ABC_HOOK_PATH/abc-ignore-evil-merge" "$commit" "$their_file" "$our_file" "$r$a"; then
 					return 0
@@ -830,19 +830,19 @@ abc_evil_merge()
 			fi
 			their_file=${line:6}
 			continue
-		elif [[ $line =~ ^\+\+\+\ [ab]/ ]]; then
+		elif [[ "$line" =~ ^\+\+\+\ [ab]/ ]]; then
 			our_file=${line:6}
 			continue
-		elif [[ $line =~ ^-- ]]; then
+		elif [[ "$line" =~ ^-- ]]; then
 			r='r'
 			continue
-		elif [[ $line =~ ^\+\+ ]]; then
+		elif [[ "$line" =~ ^\+\+ ]]; then
 			a='a'
 			continue
 		fi
 	done < <(git show --pretty=%H "$commit" -- $ABC_PATHS)
 
-	if [[ $r || $a ]]; then
+	if [[ "$r" || "$a" ]]; then
 		if ! test -x "$ABC_HOOK_PATH/abc-ignore-evil-merge" ||
 		   ! "$ABC_HOOK_PATH/abc-ignore-evil-merge" "$commit" "$their_file" "$our_file" "$r$a"; then
 			return 0
@@ -888,7 +888,7 @@ abc_find()
 		# one, and more than one parent means a merge. Most merges are clean -- the
 		# changes that appear with 'git-show' come directly from one of the parents.
 		# Those merges aren't interesting and so we automatically reject them.
-		if [[ $parents =~ ' ' ]] && ! abc_evil_merge "$commit"; then
+		if [[ "$parents" =~ ' ' ]] && ! abc_evil_merge "$commit"; then
 			abc_set_flag "$commit" ABC_DONT_WANT
 			continue
 		fi
@@ -917,23 +917,23 @@ abc_flag()
 		die_error "Unknown option '$flag' passed to flag"
 		;;
 	esac
-	if [ "$1" = '--' ]; then
+	if [[ "$1" == '--' ]]; then
 		shift
 	fi
 
-	[[ $ABC_RANGE_CHECKS == 'true' ]] && abc_set_revisions
+	[[ "$ABC_RANGE_CHECKS" == 'true' ]] && abc_set_revisions
 
 	for commit in "$@"; do
 		if ! abc_rev_verify "${commit}^{commit}"; then
 			echo "Error: '$commit' is not a valid commit" >&2
 			continue
-		elif [[ $ABC_RANGE_CHECKS == 'true' ]] && ! abc_commit_in_range "$commit" "$abc_merge_base" "$ABC_UPSTREAM"; then
+		elif [[ "$ABC_RANGE_CHECKS" == 'true' ]] && ! abc_commit_in_range "$commit" "$abc_merge_base" "$ABC_UPSTREAM"; then
 			echo "Error: '$commit' not in upstream range: ${abc_merge_base}..${ABC_UPSTREAM}" >&2
 			continue
 		fi
 
 		if current=$(abc_get_flag "$commit"); then
-			if [[ "$current" =~ ABC_DOWNSTREAM ]]; then
+			if [[ "$current" =~ 'ABC_DOWNSTREAM' ]]; then
 				current=${current/*=/}
 				warn "Overwriting current downstream for '$commit' (was '$(abc_h "$current")', now '$(abc_flag_str "$flag")')"
 			else
@@ -951,7 +951,7 @@ abc_select()
 	local show_deferred show_dropped show_picked
 	local cmds=()
 
-	while [ "$1" ]; do
+	while [[ "$1" ]]; do
 		case "$1" in
 		--show-deferred)	show_deferred=y;;
 		--show-dropped)		show_dropped=y;;
@@ -968,28 +968,28 @@ abc_select()
 	mkdir -p "$ABC_TODO_PATH"
 	todo="$ABC_TODO_PATH/git-rebase-todo"
 
-	if [ -e "$todo" ]; then
+	if test -e "$todo"; then
 		die "$todo exists. Complete current selection or remove."
 	fi
 
 	git log --notes --pretty='%h %s' --grep=^ABC_ "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
 	while read -r commit subject; do
 		flag=$(abc_get_flag "$commit")
-		if [[ "$flag" == ABC_BACKPORT_CANDIDATE || "$flag" == ABC_BACKPORT_XCANDIDATE ||
-		      ( "$show_deferred" && "$flag" == ABC_DEFERRED_CANDIDATE ) ]]; then
+		if [[ "$flag" == 'ABC_BACKPORT_CANDIDATE' || "$flag" == 'ABC_BACKPORT_XCANDIDATE' ||
+		      ( "$show_deferred" && "$flag" == 'ABC_DEFERRED_CANDIDATE' ) ]]; then
 			if abc_should_highlight "$commit"; then
 				echo "VIEW $commit $subject" >> "$todo"
 			else
 				echo "view $commit $subject" >> "$todo"
 			fi
-		elif [[ "$show_dropped" && "$flag" == ABC_DONT_WANT ]]; then
+		elif [[ "$show_dropped" && "$flag" == 'ABC_DONT_WANT' ]]; then
 			echo "drop $commit $subject" >> "$todo"
-		elif [[ "$show_picked" && "$flag" == ABC_BACKPORT_PENDING ]]; then
+		elif [[ "$show_picked" && "$flag" == 'ABC_BACKPORT_PENDING' ]]; then
 			echo "pick $commit $subject" >> "$todo"
 		fi
 	done
 
-	if [ ! -e "$todo" ]; then
+	if test ! -e "$todo"; then
 		die "No backport candidates found. Have you run git-abc find?"
 	fi
 
