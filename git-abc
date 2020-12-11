@@ -936,7 +936,7 @@ abc_flag()
 			if [[ "$current" =~ 'ABC_DOWNSTREAM' ]]; then
 				current=${current/*=/}
 				warn "Overwriting current downstream for '$commit' (was '$(abc_h "$current")', now '$(abc_flag_str "$flag")')"
-			else
+			elif [[ "$current" != 'ABC_BACKPORT_CANDIDATE' && "$current" != 'ABC_BACKPORT_XCANDIDATE' ]]; then
 				warn "Overwriting current flag for '$commit' (was '$(abc_flag_str "$current")', now '$(abc_flag_str "$flag")')"
 			fi
 		fi
@@ -957,6 +957,7 @@ abc_select()
 		--show-dropped)		show_dropped=y;;
 		--show-picked)		show_picked=y;;
 		--show-all)		show_deferred=y show_dropped=y show_picked=y;;
+		--[[:alnum:]]*)		die "Invalid option $1";;
 		*)
 			break
 			;;
@@ -1019,26 +1020,26 @@ EOF
 	for (( i = 0; i < ${#cmds[*]}; ++i )); do
 		read -r cmd commit <<<"${cmds[i]}"
 		case "$cmd" in
-		P|p|Pick|pick|PICK) abc_flag --pending "$commit";;
-		D|d|Drop|drop|DROP) abc_flag --rejected "$commit";;
-		C|c|Cand|cand|CAND) abc_flag --candidate "$commit";;
-		H|h|Hide|hide|HIDE) abc_flag --deferred "$commit";;
+		P|p|Pick|pick|PICK) abc_set_flag "$commit" 'ABC_BACKPORT_PENDING';;
+		D|d|Drop|drop|DROP) abc_set_flag "$commit" 'ABC_DONT_WANT';;
+		C|c|Cand|cand|CAND) abc_set_flag "$commit" 'ABC_BACKPORT_CANDIDATE';;
+		H|h|Hide|hide|HIDE) abc_set_flag "$commit" 'ABC_DEFERRED_CANDIDATE';;
 		V|v|View|view|VIEW)
 			git show "$commit"
 			read -r -p "Backport (Pick/Drop/Cand/Hide/Skip)? " cmd
 			while :; do
 				case "$cmd" in
 				P|p|Pick|pick)
-					abc_flag --pending "$commit"
+					abc_set_flag "$commit" 'ABC_BACKPORT_PENDING'
 					break;;
 				D|d|Drop|drop)
-					abc_flag --rejected "$commit"
+					abc_set_flag "$commit" 'ABC_DONT_WANT'
 					break;;
 				C|c|Cand|cand)
-					abc_flag --candidate "$commit"
+					abc_set_flag "$commit" 'ABC_BACKPORT_CANDIDATE'
 					break;;
 				H|h|Hide|hide)
-					abc_flag --deferred "$commit"
+					abc_set_flag "$commit" 'ABC_DEFERRED_CANDIDATE'
 					break;;
 				S|s|Skip|skip)
 					break;;
