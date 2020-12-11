@@ -109,7 +109,7 @@ do_diff()
 	fi
 
 	for c in $(git log --reverse --pretty=%h "$range"); do
-		patch=$(printf "%03d/$total" $idx)
+		patch=$(printf "%03d/$total" "$idx")
 		((++idx))
 
 		u=${upstream_links[$c]}
@@ -153,6 +153,7 @@ while getopts ":hr:u:ps:SnN" opt; do
 	N)	tmp_namespace=true;;
 	h)	"$0" -h;;
 	\?)	echo "Unknown option: -$OPTARG" >&2; usage;;
+	*) ;;
 	esac
 done
 shift $((OPTIND - 1))
@@ -174,10 +175,12 @@ check_streams "$upstream" "$base"
 export ABC_NAMESPACE
 
 if [[ ! "$range" ]]; then
+	# shellcheck disable=SC2154
 	base=$ABC_DOWNSTREAM
 	range="${base}.."
 fi
 if [[ ! "$upstream" ]]; then
+	# shellcheck disable=SC2154
 	upstream=$ABC_UPSTREAM
 fi
 

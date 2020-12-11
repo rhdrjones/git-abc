@@ -75,6 +75,7 @@ test -t 1 && abc_color=$(git config --get-colorbool color.ui 'true')
 ABC_DEFAULT_SHOULD_HIGHLIGHT="%s:[Ff]ix|FIX|^Revert ,,%(trailers:key=Cc):^<?[Ss]table\>,,%(trailers:key=Fixes,key=Fix):."
 ABC_DEFAULT_UPSTREAM_LINK="%b:^\(cherry picked from commit ([0-9a-f]{40})\)$,,%b:^commit ([0-9a-f]{40})$"
 ABC_DEFAULT_NAMESPACE="git-abc"
+# shellcheck disable=SC2154
 ABC_DEFAULT_TODO_PATH="$GIT_DIR/git-abc-todo"
 ABC_DEFAULT_HOOK_PATH="$GIT_DIR/hooks"
 ABC_DEFAULT_HUNT_CHERRIES="$(abc_bool 'false')"
@@ -278,6 +279,7 @@ abc_flag_str()
 	ABC_DOWNSTREAM=*)		echo 'backported';;
 	ABC_UPSTREAM=*)			echo 'downstream';;
 	ABC_CHERRYPICK=*)		echo 'downstream';;
+	*)				echo "Unknown:$1";;
 	esac
 }
 abc_get_flag_str() { abc_flag_str "$1" "$(abc_get_flag "$commit")"; }
@@ -364,7 +366,7 @@ abc_import()
 		fd=0
 	fi
 
-	while read -r -u $fd flag commit link; do
+	while read -r -u "$fd" flag commit link; do
 		case "$flag" in
 		BP) abc_set_flag "$commit" ABC_BACKPORT_PENDING;;
 		BC) abc_set_flag "$commit" ABC_BACKPORT_CANDIDATE;;
@@ -375,6 +377,7 @@ abc_import()
 		US) abc_set_flag "$commit" "ABC_DOWNSTREAM=$link";;
 		DS) abc_set_flag "$commit" "ABC_UPSTREAM=$link";;
 		CP) abc_set_flag "$commit" "ABC_CHERRYPICK=$link";;
+		*)  warn "Not importing unexpected flag $flag to commit $commit";;
 		esac
 	done
 }
@@ -395,6 +398,7 @@ abc_export()
 		ABC_DOWNSTREAM=*)		echo "US $commit ${flag#*=}";;
 		ABC_UPSTREAM=*)			echo "DS $commit ${flag#*=}";;
 		ABC_CHERRYPICK=*)		echo "CP $commit ${flag#*=}";;
+		*)  warn "Not exporting unexpected flag $flag from commit $commit";;
 		esac
 	done
 }
@@ -493,7 +497,7 @@ abc_list()
 		;;
 	esac
 
-	git log --notes --pretty='%h %s' --grep=^$flag "$range" |
+	git log --notes --pretty='%h %s' --grep="^$flag" "$range" |
 	while read -r commit subject; do
 		if abc_should_highlight "$commit"; then
 			echo "$(abc_highlight "$commit") $subject"
@@ -1049,6 +1053,7 @@ EOF
 				esac
 			done
 			;;
+		*) ;; # Skip commit
 		esac
 	done
 }
