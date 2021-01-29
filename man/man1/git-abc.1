@@ -46,23 +46,22 @@ To speed it up, as well as other git-abc commands, it's recommended to enable co
 Also, don't forget to create the initial commit-graph file with 'git commit-graph write'.
 .RE
 .PP
-list|list-fixes [<option>] [<upstream> [<downstream>]]
+list|list-fixes [<options>] [<upstream> [<downstream>]]
 .RS 4
 .nf
-where <option> is one of the following
---candidates|--deferred|--pending|--rejected|
---downstream-only|
---backported|--backported-non-trivial|--backported-cherry-picks
+Options specify which commits to list and how to present them.
 .fi
 .sp
-List backport candidates (--candidates), deferred backport candidates (--deferred), pending backports (--pending), commits rejected for backport (--rejected), commits that are downstream only (--downstream-only), all commits already backported (--backported), just commits already backported that were non-trivial (--backported-non-trivial), or just commits already backported that were cherry picks (--backported-cherry-picks).
-When no option is given, defaults to listing backport candidates.
+\'list' can display backport candidates (--candidates), deferred backport candidates (--deferred), pending backports (--pending), commits rejected for backport (--rejected), commits that are downstream only (--downstream-only), all commits already backported (--backported), just commits already backported that were non-trivial (--backported-non-trivial), or just commits already backported that were cherry picks (--backported-cherry-picks).
+When none of these options is given, defaults to listing backport candidates.
+.sp
+In addition, options --reverse, --pretty, --oneline and --format are used as in 'git log'.  If no format is specified, 'list' shows commit hashes together with the first line of the commit message and highlights interesting commits (e.g. possible fixes, see CONFIGURATION:abc.should-highlight) when the color.ui configuration setting is true.
+.sp
 <upstream> and <downstream> have the same defaults as 'find'.
-When the color.ui configuration setting is true, interesting commits, e.g. possible fixes, are highlighted.
 .sp
 Note, 'list' only lists commits previously found with 'find', which means <upstream> and <downstream> should bind the same range, or subrange, of the ones used with 'find' and that the search limiting <path>'s used with 'find' also limit what is listed.
 .sp
-When the 'list-fixes' variant is used, only the commits that are highlighted are output (see CONFIGURATION:abc.should-highlight)
+When the 'list-fixes' variant is used, only the "interesting" commits are output.
 .RE
 .PP
 pick-list [<upstream> [<downstream>]]
