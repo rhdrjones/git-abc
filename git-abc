@@ -475,11 +475,23 @@ abc_list()
 {
 	local range flag commit subject
 	local list='--candidates'
+	local format=''
+	local reverse=''
 
-	if [[ "$1" =~ ^- ]] && [[ "$1" != '--' ]]; then
-		list=$1
+	while [[ "$1" =~ ^- ]] && [[ "$1" != '--' ]]; do
+		case "$1" in
+		--candidates|--xcandidates|--deferred|--pending|--rejected| \
+		--backported|--backported-non-trivial|--backported-cherry-picks| \
+		--downstream-only) list=$1;;
+
+		--oneline|--pretty|--pretty=*|--format=*) format=$1 ;;
+
+		--reverse) reverse=$1 ;;
+		*) die_error "Unknown option '$1' passed to list" ;;
+		esac
 		shift
-	fi
+	done
+
 	abc_get_limits "$@"
 
 	case "$list" in
@@ -492,17 +504,25 @@ abc_list()
 	--backported-non-trivial)	range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_UPSTREAM;;
 	--backported-cherry-picks)	range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_CHERRYPICK;;
 	--downstream-only)		range="$ABC_UPSTREAM..$ABC_DOWNSTREAM" flag=ABC_ONLY_DOWNSTREAM;;
-	*)
-		die_error "Unknown option '$list' passed to list"
-		;;
+	*) die_error "huh?" ;;
 	esac
 
-	git log --notes --pretty='%h %s' --grep="^$flag" "$range" |
+	# shellcheck disable=SC2086
+	git log $reverse --notes --pretty='%h %s' --grep="^$flag" "$range" |
 	while read -r commit subject; do
 		if abc_should_highlight "$commit"; then
-			echo "$(abc_highlight "$commit") $subject"
-		elif [[ "$ABC_ONLY_FIXES" != 'y' ]]; then
+			if [ -z "$format" ]; then
+				echo "$(abc_highlight "$commit") $subject"
+				continue
+			fi
+		elif [[ "$ABC_ONLY_FIXES" == 'y' ]]; then
+			continue
+		fi
+
+		if [ -z "$format" ]; then
 			echo "$commit $subject"
+		else
+			git log -1 "$format" "$commit"
 		fi
 	done
 }
@@ -1069,7 +1089,7 @@ case "$cmd" in
 find)				abc_find "$@";;
 list)				abc_list "$@";;
 list-fixes)			ABC_ONLY_FIXES=y abc_list "$@";;
-pick-list)			abc_list --pending "$@" | awk '{print$1}' | tac;;
+pick-list)			abc_list --pending --pretty=%H --reverse "$@";;
 select)				abc_select "$@";;
 flag)				abc_flag "$@";;
 reject)				abc_flag --rejected "$@";;
