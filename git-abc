@@ -38,7 +38,7 @@ LONG_USAGE="Find and manage backport candidates
   See 'git help abc'
 "
 }
-# shellcheck disable=SC1090
+# shellcheck disable=SC1090,SC1091
 . "$(git --exec-path)/git-sh-setup"
 require_work_tree
 cd_to_toplevel
@@ -308,8 +308,12 @@ abc_has_link() { abc_flag_is_link "$(abc_get_flag "$1")"; }
 
 abc_get_link()
 {
-	local commit=$1 link
-	link=$(abc_get_flag "$commit") && link=${link/*=/}
+	local commit=$1 flag link
+
+	if flag=$(abc_get_flag "$commit") && [[ "$flag" =~ .*=(.*) ]]; then
+		link=${BASH_REMATCH[1]}
+	fi
+
 	echo "$link"
 	[[ "$link" ]]
 }
