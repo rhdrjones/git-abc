@@ -961,7 +961,9 @@ abc_flag()
 		fi
 
 		if current=$(abc_get_flag "$commit"); then
-			if [[ "$current" =~ 'ABC_DOWNSTREAM' ]]; then
+			if [[ "$current" == "$flag" ]]; then
+				continue
+			elif [[ "$current" =~ 'ABC_DOWNSTREAM' ]]; then
 				current=${current/*=/}
 				warn "Overwriting current downstream for '$commit' (was '$(abc_h "$current")', now '$(abc_flag_str "$flag")')"
 			elif [[ "$current" != 'ABC_BACKPORT_CANDIDATE' && "$current" != 'ABC_BACKPORT_XCANDIDATE' ]]; then
