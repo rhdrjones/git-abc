@@ -975,33 +975,10 @@ abc_flag()
 	done
 }
 
-abc_select()
+abc_populate_todo()
 {
-	local todo commit subject flag cmd i
-	local show_deferred show_dropped show_picked
-	local cmds=()
-
-	while [[ "$1" ]]; do
-		case "$1" in
-		--show-deferred)	show_deferred=y;;
-		--show-dropped)		show_dropped=y;;
-		--show-picked)		show_picked=y;;
-		--show-all)		show_deferred=y show_dropped=y show_picked=y;;
-		--[[:alnum:]]*)		die "Invalid option $1";;
-		*)
-			break
-			;;
-		esac
-		shift
-	done
-	abc_get_limits "$@"
-
-	mkdir -p "$ABC_TODO_PATH"
-	todo="$ABC_TODO_PATH/git-rebase-todo"
-
-	if test -e "$todo"; then
-		die "$todo exists. Complete current selection or remove."
-	fi
+	local todo=$1 show_deferred=$2 show_dropped=$3 show_picked=$4
+	local commit subject flag
 
 	git log --notes --pretty='%h %s' --grep=^ABC_ "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
 	while read -r commit subject; do
@@ -1041,6 +1018,41 @@ abc_select()
 #
 # If you remove a line here it's the same as setting it to skip.
 EOF
+}
+
+abc_select()
+{
+	local recover show_deferred show_dropped show_picked
+	local todo commit cmd i
+	local cmds=()
+
+	while [[ "$1" ]]; do
+		case "$1" in
+		-r)			recover=y;;
+		--show-deferred)	show_deferred=y;;
+		--show-dropped)		show_dropped=y;;
+		--show-picked)		show_picked=y;;
+		--show-all)		show_deferred=y show_dropped=y show_picked=y;;
+		--[[:alnum:]]*)		die "Invalid option $1";;
+		*)
+			break
+			;;
+		esac
+		shift
+	done
+	abc_get_limits "$@"
+
+	mkdir -p "$ABC_TODO_PATH"
+	todo="$ABC_TODO_PATH/git-rebase-todo"
+
+	if [[ ! "$recover" ]] && test -e "$todo"; then
+		die "$todo exists. Complete current selection or remove."
+	elif [[ "$recover" ]] && ! test -e "$todo"; then
+		die "$todo not found. Can't recover."
+	elif ! test -e "$todo"; then
+		abc_populate_todo "$todo" "$show_deferred" "$show_dropped" "$show_picked"
+	fi
+
 	git_editor "$todo"
 
 	mapfile cmds < <(awk '{if (!/^ *#/ && !/^ *$/) print $1" "$2}' "$todo" | tac)
