@@ -977,10 +977,10 @@ abc_flag()
 
 abc_populate_todo()
 {
-	local todo=$1 show_deferred=$2 show_dropped=$3 show_picked=$4
+	local todo=$1 reverse=$2 show_deferred=$3 show_dropped=$4 show_picked=$5
 	local commit subject flag
 
-	git log --notes --pretty='%h %s' --grep=^ABC_ "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
+	git log $reverse --notes --pretty='%h %s' --grep=^ABC_ "$ABC_DOWNSTREAM..$ABC_UPSTREAM" |
 	while read -r commit subject; do
 		flag=$(abc_get_flag "$commit")
 		if [[ "$flag" == 'ABC_BACKPORT_CANDIDATE' || "$flag" == 'ABC_BACKPORT_XCANDIDATE' ||
@@ -1022,13 +1022,14 @@ EOF
 
 abc_select()
 {
-	local recover show_deferred show_dropped show_picked
+	local recover reverse show_deferred show_dropped show_picked
 	local todo commit cmd i
 	local cmds=()
 
 	while [[ "$1" ]]; do
 		case "$1" in
 		-r)			recover=y;;
+		--reverse)		reverse="--reverse";;
 		--show-deferred)	show_deferred=y;;
 		--show-dropped)		show_dropped=y;;
 		--show-picked)		show_picked=y;;
@@ -1050,7 +1051,7 @@ abc_select()
 	elif [[ "$recover" ]] && ! test -e "$todo"; then
 		die "$todo not found. Can't recover."
 	elif ! test -e "$todo"; then
-		abc_populate_todo "$todo" "$show_deferred" "$show_dropped" "$show_picked"
+		abc_populate_todo "$todo" "$reverse" "$show_deferred" "$show_dropped" "$show_picked"
 	fi
 
 	git_editor "$todo"
